@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { auth } from "@/auth";
 import "./globals.css";
+
+const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,11 +27,14 @@ export const metadata: Metadata = {
   description: "Curated events, curated the right way.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
+  const isHost = session?.user?.id === HOST_USER_ID;
+
   return (
     <html
       lang="en"
@@ -44,9 +50,17 @@ export default function RootLayout({
               NY IRL
             </Link>
             <nav className="flex items-center gap-5 text-sm text-foreground-soft">
+              <Link href="/events" className="hover:text-foreground">
+                Events
+              </Link>
               <Link href="/profile" className="hover:text-foreground">
                 Profile
               </Link>
+              {isHost && (
+                <Link href="/curate" className="hover:text-foreground">
+                  Curate
+                </Link>
+              )}
             </nav>
           </div>
         </header>

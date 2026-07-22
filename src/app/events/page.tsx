@@ -1,8 +1,8 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { events, profiles } from "@/db/schema";
+import { curatedLinks, events, profiles } from "@/db/schema";
 import { computeStructuralScore } from "@/lib/scoring";
 
 export default async function EventsPage() {
@@ -10,6 +10,10 @@ export default async function EventsPage() {
 
   const allEvents = await db.query.events.findMany({
     orderBy: [asc(events.date)],
+  });
+
+  const links = await db.query.curatedLinks.findMany({
+    orderBy: [desc(curatedLinks.createdAt)],
   });
 
   const profile = session?.user?.id
@@ -91,6 +95,48 @@ export default async function EventsPage() {
         >
           Sign in to see your fit
         </Link>
+      )}
+
+      {links.length > 0 && (
+        <div className="mt-14">
+          <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
+            From around town
+          </p>
+          <p className="text-sm text-foreground-soft mb-6">
+            Worth knowing about, hosted elsewhere — RSVP on the original
+            platform.
+          </p>
+          <div className="flex flex-col gap-3">
+            {links.map((link) => (
+              <a
+                key={link.id}
+                href={link.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-accent/40"
+              >
+                {link.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={link.imageUrl}
+                    alt=""
+                    className="h-14 w-14 shrink-0 rounded-md object-cover"
+                  />
+                )}
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground">
+                    {link.title || link.sourceUrl}
+                  </p>
+                  {link.description && (
+                    <p className="mt-0.5 truncate text-sm text-foreground-soft">
+                      {link.description}
+                    </p>
+                  )}
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
       )}
     </main>
   );

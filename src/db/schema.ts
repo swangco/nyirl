@@ -171,6 +171,20 @@ export const connections = pgTable("connections", {
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 
+export const curatedLinks = pgTable("curated_links", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  addedBy: text("added_by")
+    .notNull()
+    .references(() => users.id),
+  sourceUrl: text("source_url").notNull(),
+  title: text("title"),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+});
+
 // --- Relations ---
 
 export const usersRelations = relations(users, ({ one, many }) => ({
