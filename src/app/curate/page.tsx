@@ -2,7 +2,7 @@ import { desc } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { curatedLinks } from "@/db/schema";
+import { curatedLinks, eventCategoryEnum } from "@/db/schema";
 import {
   addCuratedLink,
   addCuratedLinksBulk,
@@ -10,6 +10,20 @@ import {
 } from "@/lib/actions/curated-links";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
+
+const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
+  founders: "Founders",
+  engineers: "Engineers",
+  vcs_investors: "VCs & Investors",
+  operators: "Operators",
+  ai: "AI",
+  health_fitness: "Health & Fitness",
+  robotics: "Robotics",
+  hackathons: "Hackathons",
+  marketing_gtm: "Marketing & GTM",
+  design: "Design",
+  networking: "Networking",
+};
 
 export default async function CuratePage({
   searchParams,
@@ -82,6 +96,18 @@ export default async function CuratePage({
           placeholder="https://partiful.com/e/..."
           className="flex-1 rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-soft/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
+        <select
+          name="category"
+          defaultValue=""
+          className="rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        >
+          <option value="">No category</option>
+          {eventCategoryEnum.map((category) => (
+            <option key={category} value={category}>
+              {CATEGORY_LABELS[category]}
+            </option>
+          ))}
+        </select>
         <button
           type="submit"
           className="shrink-0 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"

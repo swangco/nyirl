@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { curatedLinks } from "@/db/schema";
+import { curatedLinks, eventCategoryEnum } from "@/db/schema";
 import { fetchLinkPreview } from "@/lib/og-meta";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
@@ -28,11 +28,17 @@ export async function addCuratedLink(formData: FormData) {
     throw new Error("Enter a valid URL");
   }
 
+  const categoryRaw = String(formData.get("category") ?? "");
+  const category = (eventCategoryEnum as readonly string[]).includes(categoryRaw)
+    ? (categoryRaw as (typeof eventCategoryEnum)[number])
+    : null;
+
   const preview = await fetchLinkPreview(url);
 
   await db.insert(curatedLinks).values({
     addedBy: userId,
     sourceUrl: url,
+    category,
     ...preview,
   });
 
