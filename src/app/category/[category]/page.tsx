@@ -1,15 +1,13 @@
-import { asc, desc, eq, gte } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { after } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { curatedLinks, eventCategoryEnum, events, profiles } from "@/db/schema";
-import {
-  computeBlendedLinkScore,
-  computeCurationQualityScore,
-  computeLinkFitScore,
-  computeStructuralScore,
-} from "@/lib/scoring";
+import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
+import { trackedHref } from "@/lib/links";
+import { computeStructuralScore, scoreCuratedLink } from "@/lib/scoring";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -72,10 +70,11 @@ export default async function CategoryPage({
     kind: "event" as const,
     id: event.id,
     title: event.title,
-    subtitle: `${event.date.toLocaleDateString(undefined, {
+    subtitle: `${event.date.toLocaleDateString("en-US", {
       weekday: "long",
       month: "long",
       day: "numeric",
+      timeZone: "America/New_York",
     })} · Hosted by NY IRL`,
     description: event.description,
     image: null as string | null,
@@ -88,27 +87,39 @@ export default async function CategoryPage({
   }));
 
   const scoredLinks = categoryLinks
-    .map((link) => {
-      const cqs = computeCurationQualityScore(link);
-      const score =
-        isProfileComplete && profile
-          ? computeBlendedLinkScore(computeLinkFitScore(profile, link), cqs)
-          : cqs;
-      return {
-        kind: "link" as const,
+    .map((link) => ({
+      kind: "link" as const,
+      id: link.id,
+      title: link.title || link.sourceUrl,
+      subtitle: "From around town",
+      description: link.description,
+      image: link.imageUrl,
+      href: trackedHref({
         id: link.id,
-        title: link.title || link.sourceUrl,
-        subtitle: "From around town",
-        description: link.description,
-        image: link.imageUrl,
-        href: link.sourceUrl,
-        external: true,
-        score,
-      };
-    })
+        kind: "link",
+        source: "category",
+      }),
+      external: true,
+      // With no complete profile this ranks by pure quality (CQS) — the sensible
+      // default order before we know anything about the viewer.
+      score: scoreCuratedLink(isProfileComplete ? profile : null, link, {
+        profileEmbedding: profile?.embedding,
+        linkEmbedding: link.embedding,
+      }).score,
+    }))
     .sort((a, b) => b.score - a.score);
 
   const items = [...hostedEvents, ...scoredLinks];
+
+  if (items.length > 0 && !(await isPrefetchRequest())) {
+    const userId = session?.user?.id ?? null;
+    after(() =>
+      logImpressions(
+        items.map((it) => ({ kind: it.kind, id: it.id, score: it.score })),
+        { userId, source: "category" },
+      ),
+    );
+  }
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">

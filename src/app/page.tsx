@@ -1,14 +1,12 @@
 import { asc, desc, eq, gte } from "drizzle-orm";
 import Link from "next/link";
+import { after } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { curatedLinks, eventCategoryEnum, events, profiles } from "@/db/schema";
-import {
-  computeBlendedLinkScore,
-  computeCurationQualityScore,
-  computeLinkFitScore,
-  computeStructuralScore,
-} from "@/lib/scoring";
+import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
+import { trackedHref } from "@/lib/links";
+import { computeStructuralScore, scoreCuratedLink } from "@/lib/scoring";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -86,10 +84,11 @@ export default async function Home() {
     kind: "event" as const,
     id: event.id,
     title: event.title,
-    subtitle: `${event.date.toLocaleDateString(undefined, {
+    subtitle: `${event.date.toLocaleDateString("en-US", {
       weekday: "long",
       month: "long",
       day: "numeric",
+      timeZone: "America/New_York",
     })} · Hosted by NY IRL`,
     description: event.description,
     image: null as string | null,
@@ -100,25 +99,41 @@ export default async function Home() {
 
   const scoredLinks = isProfileComplete
     ? links
-        .map((link) => {
-          const fit = computeLinkFitScore(profile!, link);
-          const cqs = computeCurationQualityScore(link);
-          return {
-            kind: "link" as const,
+        .map((link) => ({
+          kind: "link" as const,
+          id: link.id,
+          title: link.title || link.sourceUrl,
+          subtitle: "From around town",
+          description: link.description,
+          image: link.imageUrl,
+          href: trackedHref({
             id: link.id,
-            title: link.title || link.sourceUrl,
-            subtitle: "From around town",
-            description: link.description,
-            image: link.imageUrl,
-            href: link.sourceUrl,
-            external: true,
-            score: computeBlendedLinkScore(fit, cqs),
-          };
-        })
+            kind: "link",
+            source: "homepage",
+          }),
+          external: true,
+          score: scoreCuratedLink(profile!, link, {
+            profileEmbedding: profile!.embedding,
+            linkEmbedding: link.embedding,
+          }).score,
+        }))
         .sort((a, b) => b.score - a.score)
     : [];
 
   const recommendations = isProfileComplete ? [...hostedEvents, ...scoredLinks] : [];
+
+  // Stage 0: record what was surfaced, after the response is sent so it never
+  // blocks render. Skip prefetches (the user hasn't actually seen the list).
+  // Clicks are logged separately via /api/out.
+  if (isProfileComplete && recommendations.length > 0 && !(await isPrefetchRequest())) {
+    const userId = profile!.userId;
+    after(() =>
+      logImpressions(
+        recommendations.map((r) => ({ kind: r.kind, id: r.id, score: r.score })),
+        { userId, source: "homepage" },
+      ),
+    );
+  }
 
   const techWeekItems = [
     ...allEvents.filter((e) => e.tags?.includes("tech_week_cluster")),
@@ -160,7 +175,15 @@ export default async function Home() {
             {techWeekItems.map((item) => (
               <a
                 key={item.id}
-                href={"sourceUrl" in item ? item.sourceUrl : `/events/${item.id}/apply`}
+                href={
+                  "sourceUrl" in item
+                    ? trackedHref({
+                        id: item.id,
+                        kind: "link",
+                        source: "homepage",
+                      })
+                    : `/events/${item.id}/apply`
+                }
                 target={"sourceUrl" in item ? "_blank" : undefined}
                 rel={"sourceUrl" in item ? "noopener noreferrer" : undefined}
                 className="w-56 shrink-0 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-accent/40"

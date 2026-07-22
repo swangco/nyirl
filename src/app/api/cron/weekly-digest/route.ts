@@ -3,12 +3,19 @@ import { Resend } from "resend";
 import { db } from "@/db";
 import { curatedLinks, digestSends, events, profiles } from "@/db/schema";
 import { buildDigestItems, renderDigestEmail } from "@/lib/digest";
+import { signUnsubscribe } from "@/lib/unsubscribe";
 
 const APP_URL = "https://nyirl.vercel.app";
 
 export async function GET(req: Request) {
-  const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Fail closed: if the secret isn't configured, refuse rather than accept the
+  // guessable literal "Bearer undefined".
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error("CRON_SECRET not set — refusing to run the weekly digest.");
+    return new Response("Server misconfigured", { status: 500 });
+  }
+  if (req.headers.get("authorization") !== `Bearer ${cronSecret}`) {
     return new Response("Not authorized", { status: 401 });
   }
 
@@ -42,14 +49,20 @@ export async function GET(req: Request) {
 
   for (const profile of eligibleProfiles) {
     const alreadySent = sentByUser.get(profile.userId) ?? new Set<string>();
-    const items = buildDigestItems(profile, upcomingEvents, upcomingLinks, alreadySent);
+    const items = buildDigestItems(
+      profile,
+      upcomingEvents,
+      upcomingLinks,
+      alreadySent,
+      APP_URL,
+    );
 
     if (items.length === 0) {
       skippedEmpty++;
       continue;
     }
 
-    const unsubscribeUrl = `${APP_URL}/api/digest/unsubscribe?userId=${profile.userId}`;
+    const unsubscribeUrl = `${APP_URL}/api/digest/unsubscribe?userId=${profile.userId}&token=${signUnsubscribe(profile.userId)}`;
 
     try {
       await resend.emails.send({

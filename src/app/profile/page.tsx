@@ -1,6 +1,7 @@
 import { asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import {
@@ -14,7 +15,9 @@ import {
   profileTypeEnum,
 } from "@/db/schema";
 import { saveProfile } from "@/lib/actions/profile";
-import { computeLinkFitScore, computeStructuralScore } from "@/lib/scoring";
+import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
+import { trackedHref } from "@/lib/links";
+import { computeStructuralScore, scoreCuratedLink } from "@/lib/scoring";
 import { ProfileTypeFields } from "@/components/profile-type-fields";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
@@ -78,31 +81,63 @@ export default async function ProfilePage({
     db.query.curatedLinks.findMany({ orderBy: [desc(curatedLinks.createdAt)] }),
   ]);
 
-  const recommendations = profile
+  // Only recommend what's still upcoming (this page previously ranked past
+  // events too), and score links with the same scoreCuratedLink the homepage
+  // uses so the numbers here can't diverge from what Discover shows. Gated on
+  // profile completeness, same as the homepage and digest, so the three
+  // surfaces agree on when a user is scorable.
+  const isProfileComplete =
+    !!profile?.fullName &&
+    (profile.profileType?.length ?? 0) > 0 &&
+    !!profile.bioBlurb?.trim();
+  const now = new Date();
+  const recommendations = profile && isProfileComplete
     ? [
-        ...allEvents.map((event) => ({
-          kind: "event" as const,
-          id: event.id,
-          title: event.title,
-          subtitle: `${event.date.toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-          })}${event.host?.profile?.fullName ? ` · ${event.host.profile.fullName}` : ""}`,
-          href: `/events/${event.id}/apply`,
-          score: computeStructuralScore(profile, event.criteriaWeights, event.tags),
-        })),
-        ...allLinks.map((link) => ({
-          kind: "link" as const,
-          id: link.id,
-          title: link.title || link.sourceUrl,
-          subtitle: "From around town",
-          href: link.sourceUrl,
-          score: computeLinkFitScore(profile, link),
-        })),
+        ...allEvents
+          .filter((event) => event.date >= now)
+          .map((event) => ({
+            kind: "event" as const,
+            id: event.id,
+            title: event.title,
+            subtitle: `${event.date.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              timeZone: "America/New_York",
+            })}${event.host?.profile?.fullName ? ` · ${event.host.profile.fullName}` : ""}`,
+            href: `/events/${event.id}/apply`,
+            score: computeStructuralScore(profile, event.criteriaWeights, event.tags),
+          })),
+        ...allLinks
+          .filter((link) => link.eventDate && link.eventDate >= now)
+          .map((link) => ({
+            kind: "link" as const,
+            id: link.id,
+            title: link.title || link.sourceUrl,
+            subtitle: "From around town",
+            href: trackedHref({
+              id: link.id,
+              kind: "link",
+              source: "profile",
+            }),
+            score: scoreCuratedLink(profile, link, {
+              profileEmbedding: profile.embedding,
+              linkEmbedding: link.embedding,
+            }).score,
+          })),
       ]
         .sort((a, b) => b.score - a.score)
         .slice(0, 5)
     : [];
+
+  if (profile && recommendations.length > 0 && !(await isPrefetchRequest())) {
+    const userId = profile.userId;
+    after(() =>
+      logImpressions(
+        recommendations.map((r) => ({ kind: r.kind, id: r.id, score: r.score })),
+        { userId, source: "profile" },
+      ),
+    );
+  }
 
   return (
     <main className="mx-auto max-w-xl px-6 py-12">

@@ -1,17 +1,38 @@
+/** Decodes the handful of HTML entities that commonly show up in scraped
+ * og:title/description text (apostrophes, ampersands, quotes). Keeps the text
+ * clean for display, keyword matching, and embedding. &amp; is decoded last so
+ * a double-encoded "&amp;#39;" doesn't collapse incorrectly. */
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x2f;/gi, "/")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&");
+}
+
 function extractMeta(html: string, property: string): string | null {
+  // The content value ends at whichever quote character opened it — capture the
+  // opening quote and match to the same one via a backreference. The previous
+  // `[^"']*` capture stopped at the first apostrophe, truncating any title or
+  // description containing one (e.g. "Serena's Dinner" -> "Serena").
   const patterns = [
     new RegExp(
-      `<meta[^>]+property=["']${property}["'][^>]+content=["']([^"']*)["']`,
+      `<meta[^>]+property=["']${property}["'][^>]+content=(["'])(.*?)\\1`,
       "i",
     ),
     new RegExp(
-      `<meta[^>]+content=["']([^"']*)["'][^>]+property=["']${property}["']`,
+      `<meta[^>]+content=(["'])(.*?)\\1[^>]+property=["']${property}["']`,
       "i",
     ),
   ];
   for (const pattern of patterns) {
     const match = html.match(pattern);
-    if (match) return match[1];
+    if (match) return decodeEntities(match[2]);
   }
   return null;
 }
