@@ -98,10 +98,10 @@ export default async function CuratePage({
         />
         <select
           name="category"
-          defaultValue=""
+          required
+          defaultValue={eventCategoryEnum[0]}
           className="rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         >
-          <option value="">No category</option>
           {eventCategoryEnum.map((category) => (
             <option key={category} value={category}>
               {CATEGORY_LABELS[category]}

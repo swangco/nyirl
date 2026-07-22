@@ -110,9 +110,10 @@ export default async function Home() {
 
       <div className="mb-14 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {categoryCounts.map(({ category, count }) => (
-          <div
+          <Link
             key={category}
-            className="rounded-lg border border-line bg-surface p-4"
+            href={`/category/${category}`}
+            className="rounded-lg border border-line bg-surface p-4 transition-colors hover:border-accent/40"
           >
             <p className="font-medium text-foreground">
               {CATEGORY_LABELS[category]}
@@ -120,7 +121,7 @@ export default async function Home() {
             <p className="font-mono text-xs text-foreground-soft">
               {count} {count === 1 ? "listing" : "listings"}
             </p>
-          </div>
+          </Link>
         ))}
       </div>
 

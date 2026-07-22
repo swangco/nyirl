@@ -137,7 +137,7 @@ export const events = pgTable("events", {
   criteriaWeights: text("criteria_weights"), // JSON string: { criterion: weight }
   typeCaps: text("type_caps"), // JSON string: { profile_type: max_share }
   excludeRules: text("exclude_rules"), // JSON string: string[]
-  category: text("category").$type<(typeof eventCategoryEnum)[number]>(),
+  category: text("category").$type<(typeof eventCategoryEnum)[number]>().notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 
@@ -207,7 +207,7 @@ export const curatedLinks = pgTable("curated_links", {
   title: text("title"),
   description: text("description"),
   imageUrl: text("image_url"),
-  category: text("category").$type<(typeof eventCategoryEnum)[number]>(),
+  category: text("category").$type<(typeof eventCategoryEnum)[number]>().notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 

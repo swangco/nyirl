@@ -29,9 +29,10 @@ export async function addCuratedLink(formData: FormData) {
   }
 
   const categoryRaw = String(formData.get("category") ?? "");
-  const category = (eventCategoryEnum as readonly string[]).includes(categoryRaw)
-    ? (categoryRaw as (typeof eventCategoryEnum)[number])
-    : null;
+  if (!(eventCategoryEnum as readonly string[]).includes(categoryRaw)) {
+    throw new Error("Pick a category");
+  }
+  const category = categoryRaw as (typeof eventCategoryEnum)[number];
 
   const preview = await fetchLinkPreview(url);
 
@@ -55,6 +56,9 @@ const ExtractedEventsSchema = z.object({
   events: z.array(
     z.object({
       url: z.string().describe("The event's registration/RSVP link"),
+      category: z
+        .enum(eventCategoryEnum)
+        .describe("Best-fit category for this specific event based on its context in the text"),
     }),
   ),
 });
@@ -67,24 +71,29 @@ export async function addCuratedLinksBulk(formData: FormData) {
     throw new Error("Paste some text first");
   }
 
-  let urls: string[];
+  let extracted: { url: string; category: (typeof eventCategoryEnum)[number] }[];
   try {
     const { object } = await generateObject({
       model: anthropic("claude-haiku-4-5-20251001"),
       schema: ExtractedEventsSchema,
-      prompt: `Extract every distinct event link from this text (a social media post or thread listing events — likely Partiful, Luma, or similar RSVP links). Ignore non-event links (profile links, unrelated articles). Return each URL exactly as written.
+      prompt: `Extract every distinct event link from this text (a social media post or thread listing events — likely Partiful, Luma, or similar RSVP links). Ignore non-event links (profile links, unrelated articles). Return each URL exactly as written, along with the single best-fit category for that specific event based on how it's described.
 
 Text:
 """
 ${text}
 """`,
     });
-    urls = object.events.map((e) => e.url);
+    extracted = object.events;
   } catch (err) {
     console.error("AI event extraction failed, falling back to raw URL scan:", err);
-    urls = text.match(/https?:\/\/[^\s)]+/g) ?? [];
+    const urls = text.match(/https?:\/\/[^\s)]+/g) ?? [];
+    // No categorization signal without the AI call — "networking" is the
+    // safest generic bucket; the host can curate further from there.
+    extracted = urls.map((url) => ({ url, category: "networking" as const }));
   }
-  urls = [...new Set(urls)];
+
+  const byUrl = new Map(extracted.map((e) => [e.url, e.category]));
+  const urls = [...byUrl.keys()];
   if (urls.length === 0) {
     redirect("/curate?bulkEmpty=1");
   }
@@ -105,6 +114,7 @@ ${text}
       previews.map(({ url, preview }) => ({
         addedBy: userId,
         sourceUrl: url,
+        category: byUrl.get(url)!,
         ...preview,
       })),
     );
