@@ -95,7 +95,7 @@ export default async function Home() {
     image: null as string | null,
     href: `/events/${event.id}/apply`,
     external: false,
-    score: isProfileComplete ? computeStructuralScore(profile!, event.criteriaWeights) : null,
+    score: isProfileComplete ? computeStructuralScore(profile!, event.criteriaWeights, event.tags) : null,
   }));
 
   const scoredLinks = isProfileComplete

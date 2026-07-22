@@ -4,11 +4,24 @@ import { z } from "zod";
 import type {
   curatedLinks,
   founderStageEnum,
+  genderIdentityEnum,
   profiles,
   profileTypeEnum,
 } from "@/db/schema";
 
 type Profile = typeof profiles.$inferSelect;
+
+/**
+ * Maps a profile's gender to the event/link tag that signals "this is
+ * oriented toward you" (e.g. "Female Investor Coffee" carries
+ * womens_focused). Deliberately positive-only: a profile with no match, or
+ * no gender set at all, is never penalized — this only ever adds a boost
+ * when a genuine orientation signal exists on both sides.
+ */
+const GENDER_ORIENTATION_TAGS: Partial<Record<(typeof genderIdentityEnum)[number], string>> = {
+  woman: "womens_focused",
+  man: "mens_focused",
+};
 
 type ProfileTypeCriterion = {
   weight: number;
@@ -31,6 +44,15 @@ type CriteriaWeights = {
   funding_signal?: { weight: number };
   /** Investors only — rewards a minimum rough number of checks written. */
   checks_written_min?: { weight: number; min: number };
+  /** Optional — rewards overlap between the profile's interests and the
+   * event's tags (e.g. a "pickleball" event tag matching a profile that
+   * lists pickleball as an interest). */
+  interest_match?: { weight: number };
+  /** Optional — rewards a profile's gender matching an event's stated
+   * orientation (see GENDER_ORIENTATION_TAGS). Never penalizes a profile
+   * with no gender set or no match; only ever adds signal when both sides
+   * genuinely align. */
+  gender_orientation_match?: { weight: number };
 };
 
 type ScorableProfile = Pick<
@@ -41,12 +63,15 @@ type ScorableProfile = Pick<
   | "stage"
   | "fundingRaised"
   | "checksWritten"
+  | "genderIdentity"
+  | "interests"
 >;
 
 /** Deterministic 0-100 score from the host's weighted rubric. Pure function, no I/O. */
 export function computeStructuralScore(
   profile: ScorableProfile,
   criteriaWeightsJson: string | null,
+  eventTags: string[] | null = null,
 ): number {
   const criteria: CriteriaWeights = criteriaWeightsJson
     ? JSON.parse(criteriaWeightsJson)
@@ -99,6 +124,29 @@ export function computeStructuralScore(
     const { weight, min } = criteria.checks_written_min;
     const checks = profile.checksWritten ?? 0;
     const score = checks >= min ? 9 : checks > 0 ? 3 : 1;
+
+    totalWeight += weight;
+    weightedScore += weight * score;
+  }
+
+  if (criteria.interest_match) {
+    const { weight } = criteria.interest_match;
+    const interests = profile.interests ?? [];
+    const tags = eventTags ?? [];
+    const hasOverlap = interests.some((i) => tags.includes(i));
+    const score = hasOverlap ? 9 : interests.length > 0 ? 3 : 1;
+
+    totalWeight += weight;
+    weightedScore += weight * score;
+  }
+
+  if (criteria.gender_orientation_match) {
+    const { weight } = criteria.gender_orientation_match;
+    const orientationTag = profile.genderIdentity
+      ? GENDER_ORIENTATION_TAGS[profile.genderIdentity]
+      : undefined;
+    const tags = eventTags ?? [];
+    const score = orientationTag && tags.includes(orientationTag) ? 9 : 3;
 
     totalWeight += weight;
     weightedScore += weight * score;
@@ -265,8 +313,8 @@ function extractAttendeeCount(text: string): number | null {
  * resume, no brief, no host-defined rubric, just scraped preview text.
  */
 export function computeLinkFitScore(
-  profile: Pick<Profile, "profileType" | "bioBlurb"> | null,
-  link: { title: string | null; description: string | null },
+  profile: Pick<Profile, "profileType" | "bioBlurb" | "genderIdentity" | "interests"> | null,
+  link: { title: string | null; description: string | null; tags?: string[] | null },
 ): number {
   const text = `${link.title ?? ""} ${link.description ?? ""}`.toLowerCase();
 
@@ -300,7 +348,18 @@ export function computeLinkFitScore(
     else if (attendeeCount >= 150) sizeAdjustment = -15;
   }
 
-  return Math.round(Math.min(100, Math.max(0, base + hostBoost + sizeAdjustment)));
+  const tags = link.tags ?? [];
+  const interestHits = (profile?.interests ?? []).filter((i) => tags.includes(i)).length;
+  const interestBoost = Math.min(interestHits * 10, 20);
+
+  const orientationTag = profile?.genderIdentity
+    ? GENDER_ORIENTATION_TAGS[profile.genderIdentity]
+    : undefined;
+  const genderBoost = orientationTag && tags.includes(orientationTag) ? 15 : 0;
+
+  return Math.round(
+    Math.min(100, Math.max(0, base + hostBoost + sizeAdjustment + interestBoost + genderBoost)),
+  );
 }
 
 const HOST_TIER_POINTS = { unknown: 0, tier_1: 40 };

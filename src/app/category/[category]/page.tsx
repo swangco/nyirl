@@ -81,7 +81,10 @@ export default async function CategoryPage({
     image: null as string | null,
     href: `/events/${event.id}/apply`,
     external: false,
-    score: isProfileComplete && profile ? computeStructuralScore(profile, event.criteriaWeights) : null,
+    score:
+      isProfileComplete && profile
+        ? computeStructuralScore(profile, event.criteriaWeights, event.tags)
+        : null,
   }));
 
   const scoredLinks = categoryLinks

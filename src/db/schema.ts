@@ -111,6 +111,33 @@ export const linkFormatEnum = [
   "dinner",
 ] as const;
 
+// --- Optional richer-matching fields (see computeLinkFitScore) ---
+// All three are optional extras, never required for "profile complete" —
+// gender and age are sensitive enough that gating access to recommendations
+// on disclosing them isn't acceptable, so they only ever sharpen a score,
+// never gate one.
+
+export const genderIdentityEnum = ["woman", "man", "non_binary", "prefer_not_to_say"] as const;
+
+export const ageRangeEnum = ["under_25", "25_34", "35_44", "45_54", "55_plus"] as const;
+
+/** Fixed vocabulary (not freeform) so it can overlap-match against event/link
+ * tags deterministically — same reasoning as why category is a fixed enum. */
+export const interestTagEnum = [
+  "pickleball",
+  "pilates",
+  "boxing",
+  "yoga",
+  "running",
+  "tennis",
+  "golf",
+  "cycling",
+  "strength_training",
+  "wine",
+  "live_music",
+  "art",
+] as const;
+
 export const profiles = pgTable("profiles", {
   id: text("id")
     .primaryKey()
@@ -132,6 +159,9 @@ export const profiles = pgTable("profiles", {
   stage: text("stage").$type<(typeof founderStageEnum)[number]>(), // founders only
   fundingRaised: text("funding_raised"), // founders only — free text, e.g. "$1.2M seed"
   checksWritten: integer("checks_written"), // investors only — rough count
+  genderIdentity: text("gender_identity").$type<(typeof genderIdentityEnum)[number]>(),
+  ageRange: text("age_range").$type<(typeof ageRangeEnum)[number]>(),
+  interests: text("interests").array().$type<(typeof interestTagEnum)[number][]>(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });

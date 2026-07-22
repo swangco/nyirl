@@ -6,7 +6,14 @@ import { redirect } from "next/navigation";
 import { extractText, getDocumentProxy } from "unpdf";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { founderStageEnum, profiles, profileTypeEnum } from "@/db/schema";
+import {
+  ageRangeEnum,
+  founderStageEnum,
+  genderIdentityEnum,
+  interestTagEnum,
+  profiles,
+  profileTypeEnum,
+} from "@/db/schema";
 
 export async function saveProfile(formData: FormData) {
   const session = await auth();
@@ -34,6 +41,23 @@ export async function saveProfile(formData: FormData) {
   const fundingRaised = String(formData.get("fundingRaised") ?? "").trim();
   const checksWrittenRaw = String(formData.get("checksWritten") ?? "").trim();
   const checksWritten = checksWrittenRaw ? parseInt(checksWrittenRaw, 10) : null;
+
+  const genderIdentityRaw = String(formData.get("genderIdentity") ?? "");
+  const genderIdentity = (genderIdentityEnum as readonly string[]).includes(genderIdentityRaw)
+    ? (genderIdentityRaw as (typeof genderIdentityEnum)[number])
+    : null;
+
+  const ageRangeRaw = String(formData.get("ageRange") ?? "");
+  const ageRange = (ageRangeEnum as readonly string[]).includes(ageRangeRaw)
+    ? (ageRangeRaw as (typeof ageRangeEnum)[number])
+    : null;
+
+  const interests = formData
+    .getAll("interests")
+    .map(String)
+    .filter((i): i is (typeof interestTagEnum)[number] =>
+      (interestTagEnum as readonly string[]).includes(i),
+    );
 
   if (!fullName) {
     throw new Error("Full name is required");
@@ -88,6 +112,9 @@ export async function saveProfile(formData: FormData) {
         stage,
         fundingRaised: fundingRaised || null,
         checksWritten,
+        genderIdentity,
+        ageRange,
+        interests,
         ...(headshotUrl ? { headshotUrl } : {}),
         ...(resumeUrl ? { resumeUrl } : {}),
         ...(resumeTextExtracted ? { resumeTextExtracted } : {}),
@@ -106,6 +133,9 @@ export async function saveProfile(formData: FormData) {
       stage,
       fundingRaised: fundingRaised || null,
       checksWritten,
+      genderIdentity,
+      ageRange,
+      interests,
       headshotUrl,
       resumeUrl,
       resumeTextExtracted,

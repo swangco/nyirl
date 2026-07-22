@@ -42,7 +42,7 @@ export async function applyToEvent(eventId: string) {
     redirect(`/events/${eventId}/apply?already=1`);
   }
 
-  const structuralScore = computeStructuralScore(profile, event.criteriaWeights);
+  const structuralScore = computeStructuralScore(profile, event.criteriaWeights, event.tags);
   const semantic = await computeSemanticScore({
     idealAttendeeBrief: event.idealAttendeeBrief,
     resumeText: profile.resumeTextExtracted,

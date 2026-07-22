@@ -4,9 +4,12 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import {
+  ageRangeEnum,
   curatedLinks,
   events,
   founderStageEnum,
+  genderIdentityEnum,
+  interestTagEnum,
   profiles,
   profileTypeEnum,
 } from "@/db/schema";
@@ -15,6 +18,36 @@ import { computeLinkFitScore, computeStructuralScore } from "@/lib/scoring";
 import { ProfileTypeFields } from "@/components/profile-type-fields";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
+
+const GENDER_LABELS: Record<(typeof genderIdentityEnum)[number], string> = {
+  woman: "Woman",
+  man: "Man",
+  non_binary: "Non-binary",
+  prefer_not_to_say: "Prefer not to say",
+};
+
+const AGE_RANGE_LABELS: Record<(typeof ageRangeEnum)[number], string> = {
+  under_25: "Under 25",
+  "25_34": "25–34",
+  "35_44": "35–44",
+  "45_54": "45–54",
+  "55_plus": "55+",
+};
+
+const INTEREST_LABELS: Record<(typeof interestTagEnum)[number], string> = {
+  pickleball: "Pickleball",
+  pilates: "Pilates",
+  boxing: "Boxing",
+  yoga: "Yoga",
+  running: "Running",
+  tennis: "Tennis",
+  golf: "Golf",
+  cycling: "Cycling",
+  strength_training: "Strength training",
+  wine: "Wine",
+  live_music: "Live music",
+  art: "Art",
+};
 
 const inputClass =
   "rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-soft/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
@@ -56,7 +89,7 @@ export default async function ProfilePage({
             day: "numeric",
           })}${event.host?.profile?.fullName ? ` · ${event.host.profile.fullName}` : ""}`,
           href: `/events/${event.id}/apply`,
-          score: computeStructuralScore(profile, event.criteriaWeights),
+          score: computeStructuralScore(profile, event.criteriaWeights, event.tags),
         })),
         ...allLinks.map((link) => ({
           kind: "link" as const,
@@ -152,6 +185,70 @@ export default async function ProfilePage({
           defaultFundingRaised={profile?.fundingRaised ?? null}
           defaultChecksWritten={profile?.checksWritten ?? null}
         />
+
+        <div className="rounded-md border border-line bg-surface p-4">
+          <p className={labelClass}>A few optional extras</p>
+          <p className="mt-1 mb-4 text-sm text-foreground-soft">
+            None of this is required — sharing more just sharpens which
+            events end up ranked highest for you.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Gender</span>
+              <select
+                name="genderIdentity"
+                defaultValue={profile?.genderIdentity ?? ""}
+                className={inputClass}
+              >
+                <option value="">Prefer not to say</option>
+                {genderIdentityEnum
+                  .filter((g) => g !== "prefer_not_to_say")
+                  .map((g) => (
+                    <option key={g} value={g}>
+                      {GENDER_LABELS[g]}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Age range</span>
+              <select
+                name="ageRange"
+                defaultValue={profile?.ageRange ?? ""}
+                className={inputClass}
+              >
+                <option value="">Prefer not to say</option>
+                {ageRangeEnum.map((range) => (
+                  <option key={range} value={range}>
+                    {AGE_RANGE_LABELS[range]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <fieldset className="mt-4 flex flex-col gap-2.5">
+            <legend className={labelClass}>Interests</legend>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3">
+              {interestTagEnum.map((interest) => (
+                <label
+                  key={interest}
+                  className="flex items-center gap-2 text-sm text-foreground-soft has-checked:text-foreground"
+                >
+                  <input
+                    type="checkbox"
+                    name="interests"
+                    value={interest}
+                    defaultChecked={profile?.interests?.includes(interest) ?? false}
+                    className="accent-accent"
+                  />
+                  {INTEREST_LABELS[interest]}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </div>
 
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>Bio blurb</span>
