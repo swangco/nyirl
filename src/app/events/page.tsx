@@ -3,13 +3,14 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { curatedLinks, events, profiles } from "@/db/schema";
-import { computeStructuralScore } from "@/lib/scoring";
+import { computeLinkFitScore, computeStructuralScore } from "@/lib/scoring";
 
 export default async function EventsPage() {
   const session = await auth();
 
   const allEvents = await db.query.events.findMany({
     orderBy: [asc(events.date)],
+    with: { host: { with: { profile: true } } },
   });
 
   const links = await db.query.curatedLinks.findMany({
@@ -28,6 +29,13 @@ export default async function EventsPage() {
       ? computeStructuralScore(profile, event.criteriaWeights)
       : null,
   }));
+
+  const linksWithFit = links
+    .map((link) => ({
+      link,
+      fit: profile ? computeLinkFitScore(profile, link) : null,
+    }))
+    .sort((a, b) => (b.fit ?? 0) - (a.fit ?? 0));
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
@@ -58,6 +66,9 @@ export default async function EventsPage() {
                     month: "long",
                     day: "numeric",
                   })}
+                  {event.host?.profile?.fullName && (
+                    <> · hosted by {event.host.profile.fullName}</>
+                  )}
                 </p>
                 <h2 className="font-serif text-xl font-semibold">
                   {event.title}
@@ -107,13 +118,13 @@ export default async function EventsPage() {
             platform.
           </p>
           <div className="flex flex-col gap-3">
-            {links.map((link) => (
+            {linksWithFit.map(({ link, fit }) => (
               <a
                 key={link.id}
                 href={link.sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-accent/40"
+                className="flex items-start gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-accent/40"
               >
                 {link.imageUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -123,7 +134,7 @@ export default async function EventsPage() {
                     className="h-14 w-14 shrink-0 rounded-md object-cover"
                   />
                 )}
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="font-medium text-foreground">
                     {link.title || link.sourceUrl}
                   </p>
@@ -133,6 +144,16 @@ export default async function EventsPage() {
                     </p>
                   )}
                 </div>
+                {fit !== null && (
+                  <div className="shrink-0 text-right">
+                    <div className="font-mono text-lg font-semibold tabular-nums">
+                      {fit}
+                    </div>
+                    <div className="text-[11px] uppercase tracking-wide text-foreground-soft/70">
+                      fit
+                    </div>
+                  </div>
+                )}
               </a>
             ))}
           </div>

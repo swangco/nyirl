@@ -1,9 +1,13 @@
-import { eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { profiles, profileTypeEnum } from "@/db/schema";
+import { curatedLinks, events, profiles, profileTypeEnum } from "@/db/schema";
 import { saveProfile } from "@/lib/actions/profile";
+import { computeLinkFitScore, computeStructuralScore } from "@/lib/scoring";
+
+const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
 
 const PROFILE_TYPE_LABELS: Record<(typeof profileTypeEnum)[number], string> = {
   founder: "Founder",
@@ -34,6 +38,41 @@ export default async function ProfilePage({
   });
 
   const { saved, required } = await searchParams;
+  const isHost = session.user.id === HOST_USER_ID;
+
+  const [allEvents, allLinks] = await Promise.all([
+    db.query.events.findMany({
+      orderBy: [asc(events.date)],
+      with: { host: { with: { profile: true } } },
+    }),
+    db.query.curatedLinks.findMany({ orderBy: [desc(curatedLinks.createdAt)] }),
+  ]);
+
+  const recommendations = profile
+    ? [
+        ...allEvents.map((event) => ({
+          kind: "event" as const,
+          id: event.id,
+          title: event.title,
+          subtitle: `${event.date.toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+          })}${event.host?.profile?.fullName ? ` · ${event.host.profile.fullName}` : ""}`,
+          href: `/events/${event.id}/apply`,
+          score: computeStructuralScore(profile, event.criteriaWeights),
+        })),
+        ...allLinks.map((link) => ({
+          kind: "link" as const,
+          id: link.id,
+          title: link.title || link.sourceUrl,
+          subtitle: "From around town",
+          href: link.sourceUrl,
+          score: computeLinkFitScore(profile, link),
+        })),
+      ]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+    : [];
 
   return (
     <main className="mx-auto max-w-xl px-6 py-12">
@@ -166,6 +205,58 @@ export default async function ProfilePage({
           Save profile
         </button>
       </form>
+
+      {profile && (
+        <div className="mt-14 border-t border-line pt-10">
+          <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
+            Recommended for you
+          </p>
+          <p className="text-sm text-foreground-soft mb-6">
+            Ranked by fit against the profile above.
+          </p>
+          <div className="flex flex-col gap-3">
+            {recommendations.map((item) => (
+              <a
+                key={`${item.kind}-${item.id}`}
+                href={item.href}
+                target={item.kind === "link" ? "_blank" : undefined}
+                rel={item.kind === "link" ? "noopener noreferrer" : undefined}
+                className="flex items-start justify-between gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-accent/40"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground">{item.title}</p>
+                  <p className="mt-0.5 text-sm text-foreground-soft">
+                    {item.subtitle}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="font-mono text-lg font-semibold tabular-nums">
+                    {item.score}
+                  </div>
+                  <div className="text-[11px] uppercase tracking-wide text-foreground-soft/70">
+                    fit
+                  </div>
+                </div>
+              </a>
+            ))}
+            {recommendations.length === 0 && (
+              <p className="text-sm text-foreground-soft">
+                Nothing to recommend yet.
+              </p>
+            )}
+          </div>
+
+          {isHost && (
+            <Link
+              href="/curate"
+              className="mt-6 inline-block text-sm text-accent underline underline-offset-2"
+            >
+              Manage what you've curated ({allLinks.length} link
+              {allLinks.length === 1 ? "" : "s"}) →
+            </Link>
+          )}
+        </div>
+      )}
     </main>
   );
 }

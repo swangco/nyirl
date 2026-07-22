@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Lora, Manrope } from "next/font/google";
 import Link from "next/link";
 import { auth } from "@/auth";
+import { AssistantWidget } from "@/components/assistant-widget";
 import "./globals.css";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
@@ -67,15 +68,11 @@ export default async function RootLayout({
                   Curate
                 </Link>
               )}
-              {isHost && (
-                <Link href="/assistant" className="hover:text-foreground">
-                  Assistant
-                </Link>
-              )}
             </nav>
           </div>
         </header>
         <div className="flex-1">{children}</div>
+        {isHost && <AssistantWidget />}
       </body>
     </html>
   );
