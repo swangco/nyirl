@@ -6,6 +6,7 @@ import {
   primaryKey,
   integer,
   boolean,
+  unique,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
 
@@ -162,6 +163,7 @@ export const profiles = pgTable("profiles", {
   genderIdentity: text("gender_identity").$type<(typeof genderIdentityEnum)[number]>(),
   ageRange: text("age_range").$type<(typeof ageRangeEnum)[number]>(),
   interests: text("interests").array().$type<(typeof interestTagEnum)[number][]>(),
+  digestOptOut: boolean("digest_opt_out").notNull().default(false),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
@@ -264,6 +266,26 @@ export const curatedLinks = pgTable("curated_links", {
   tags: text("tags").array(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
+
+export const digestItemKindEnum = ["event", "link"] as const;
+
+/** Tracks what's already been emailed to whom, so the weekly digest never
+ * repeats an item — see lib/digest.ts. */
+export const digestSends = pgTable(
+  "digest_sends",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    itemKind: text("item_kind").$type<(typeof digestItemKindEnum)[number]>().notNull(),
+    itemId: text("item_id").notNull(),
+    sentAt: timestamp("sent_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.userId, t.itemKind, t.itemId)],
+);
 
 // --- Relations ---
 
