@@ -9,10 +9,6 @@ export default function Home() {
       <p className="max-w-md text-lg text-foreground text-balance">
         Discover the right rooms to be in. Curated to your profile.
       </p>
-      <p className="max-w-md text-foreground-soft">
-        One profile, reused for every event you apply to. Hosts see who&apos;s
-        actually the right fit — not just who registered first.
-      </p>
       <div className="flex flex-col gap-3 sm:flex-row">
         <Link
           href="/events"
