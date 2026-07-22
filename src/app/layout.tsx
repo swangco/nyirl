@@ -57,8 +57,8 @@ export default async function RootLayout({
               NY IRL
             </Link>
             <nav className="flex items-center gap-6 text-sm text-foreground-soft">
-              <Link href="/events" className="hover:text-foreground">
-                Events
+              <Link href="/" className="hover:text-foreground">
+                Discover
               </Link>
               <Link href="/profile" className="hover:text-foreground">
                 Profile

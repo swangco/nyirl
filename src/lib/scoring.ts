@@ -159,12 +159,19 @@ export function computeCompositeScore(structural: number, semantic: number): num
 }
 
 const PROFILE_TYPE_KEYWORDS: Record<(typeof profileTypeEnum)[number], string[]> = {
-  founder: ["founder", "startup", "ceo", "entrepreneur", "founders"],
-  operator: ["operator", "ops", "growth", "gtm"],
-  investor: ["investor", "vc", "venture", "fund", "capital"],
-  engineer: ["engineer", "developer", "technical", "hackathon", "build", "ai", "code"],
-  marketing_gtm: ["marketing", "growth", "gtm", "brand"],
-  job_seeking: ["hiring", "job", "career", "recruiting"],
+  founder: [
+    "founder", "founders", "startup", "startups", "ceo", "entrepreneur",
+    "venture", "vc", "demo day", "pitch", "builders", "tech", "network",
+    "networking", "mixer", "community", "industry",
+  ],
+  operator: ["operator", "operators", "ops", "growth", "gtm", "go-to-market"],
+  investor: ["investor", "investors", "vc", "venture", "fund", "capital", "angel"],
+  engineer: [
+    "engineer", "engineers", "developer", "technical", "hackathon", "build",
+    "ai", "code", "hardware", "demo",
+  ],
+  marketing_gtm: ["marketing", "growth", "gtm", "brand", "content"],
+  job_seeking: ["hiring", "job", "career", "recruiting", "talent"],
   other: [],
 };
 
