@@ -75,6 +75,13 @@ export const profileTypeEnum = [
   "other",
 ] as const;
 
+export const founderStageEnum = [
+  "idea",
+  "pre_seed",
+  "seed",
+  "series_a_plus",
+] as const;
+
 export const profiles = pgTable("profiles", {
   id: text("id")
     .primaryKey()
@@ -93,6 +100,9 @@ export const profiles = pgTable("profiles", {
   title: text("title"),
   bioBlurb: text("bio_blurb"),
   tags: text("tags").array(),
+  stage: text("stage").$type<(typeof founderStageEnum)[number]>(), // founders only
+  fundingRaised: text("funding_raised"), // founders only — free text, e.g. "$1.2M seed"
+  checksWritten: integer("checks_written"), // investors only — rough count
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });

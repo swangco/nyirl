@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { extractText, getDocumentProxy } from "unpdf";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { profiles, profileTypeEnum } from "@/db/schema";
+import { founderStageEnum, profiles, profileTypeEnum } from "@/db/schema";
 
 export async function saveProfile(formData: FormData) {
   const session = await auth();
@@ -26,6 +26,14 @@ export async function saveProfile(formData: FormData) {
     .filter((t): t is (typeof profileTypeEnum)[number] =>
       (profileTypeEnum as readonly string[]).includes(t),
     );
+
+  const stageRaw = String(formData.get("stage") ?? "");
+  const stage = (founderStageEnum as readonly string[]).includes(stageRaw)
+    ? (stageRaw as (typeof founderStageEnum)[number])
+    : null;
+  const fundingRaised = String(formData.get("fundingRaised") ?? "").trim();
+  const checksWrittenRaw = String(formData.get("checksWritten") ?? "").trim();
+  const checksWritten = checksWrittenRaw ? parseInt(checksWrittenRaw, 10) : null;
 
   if (!fullName) {
     throw new Error("Full name is required");
@@ -77,6 +85,9 @@ export async function saveProfile(formData: FormData) {
         title: title || null,
         bioBlurb: bioBlurb || null,
         profileType: selectedTypes,
+        stage,
+        fundingRaised: fundingRaised || null,
+        checksWritten,
         ...(headshotUrl ? { headshotUrl } : {}),
         ...(resumeUrl ? { resumeUrl } : {}),
         ...(resumeTextExtracted ? { resumeTextExtracted } : {}),
@@ -92,6 +103,9 @@ export async function saveProfile(formData: FormData) {
       title: title || null,
       bioBlurb: bioBlurb || null,
       profileType: selectedTypes,
+      stage,
+      fundingRaised: fundingRaised || null,
+      checksWritten,
       headshotUrl,
       resumeUrl,
       resumeTextExtracted,

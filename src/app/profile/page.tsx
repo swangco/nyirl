@@ -3,21 +3,18 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { curatedLinks, events, profiles, profileTypeEnum } from "@/db/schema";
+import {
+  curatedLinks,
+  events,
+  founderStageEnum,
+  profiles,
+  profileTypeEnum,
+} from "@/db/schema";
 import { saveProfile } from "@/lib/actions/profile";
 import { computeLinkFitScore, computeStructuralScore } from "@/lib/scoring";
+import { ProfileTypeFields } from "@/components/profile-type-fields";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
-
-const PROFILE_TYPE_LABELS: Record<(typeof profileTypeEnum)[number], string> = {
-  founder: "Founder",
-  operator: "Operator",
-  investor: "Investor",
-  engineer: "Engineer",
-  marketing_gtm: "Marketing / GTM",
-  job_seeking: "Job-seeking",
-  other: "Other",
-};
 
 const inputClass =
   "rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-soft/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
@@ -147,26 +144,14 @@ export default async function ProfilePage({
           </label>
         </div>
 
-        <fieldset className="flex flex-col gap-2.5">
-          <legend className={labelClass}>Profile type</legend>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-            {profileTypeEnum.map((type) => (
-              <label
-                key={type}
-                className="flex items-center gap-2 text-sm text-foreground-soft has-checked:text-foreground"
-              >
-                <input
-                  type="checkbox"
-                  name="profileType"
-                  value={type}
-                  defaultChecked={profile?.profileType?.includes(type)}
-                  className="accent-accent"
-                />
-                {PROFILE_TYPE_LABELS[type]}
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        <ProfileTypeFields
+          profileTypeEnum={profileTypeEnum}
+          founderStageEnum={founderStageEnum}
+          defaultTypes={profile?.profileType ?? []}
+          defaultStage={profile?.stage ?? null}
+          defaultFundingRaised={profile?.fundingRaised ?? null}
+          defaultChecksWritten={profile?.checksWritten ?? null}
+        />
 
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>Bio blurb</span>
