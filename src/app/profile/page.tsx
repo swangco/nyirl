@@ -37,16 +37,6 @@ export default async function ProfilePage({
 
   return (
     <main className="mx-auto max-w-xl px-6 py-12">
-      <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
-        Your profile
-      </p>
-      <h1 className="font-serif text-3xl font-semibold tracking-tight mb-2">
-        {profile ? "Keep it current" : "Build once, use everywhere"}
-      </h1>
-      <p className="text-sm text-foreground-soft mb-8">
-        Reused for every event you apply to on NY IRL.
-      </p>
-
       {saved && (
         <div className="mb-6 rounded-md border border-line bg-surface px-4 py-2.5 text-sm text-foreground">
           Profile saved.
@@ -59,6 +49,25 @@ export default async function ProfilePage({
       )}
 
       <form action={saveProfile} className="flex flex-col gap-6">
+        <label className="flex flex-col items-center gap-3 self-center">
+          {profile?.headshotUrl ? (
+            <img
+              src={profile.headshotUrl}
+              alt="Current headshot"
+              className="h-24 w-24 rounded-full border border-line object-cover"
+            />
+          ) : (
+            <div className="h-24 w-24 rounded-full border border-dashed border-line bg-surface" />
+          )}
+          <span className={labelClass}>Headshot</span>
+          <input
+            type="file"
+            name="headshot"
+            accept="image/*"
+            className="text-sm text-foreground-soft file:mr-3 file:rounded-md file:border file:border-line file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-foreground"
+          />
+        </label>
+
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>Full name</span>
           <input
@@ -131,43 +140,24 @@ export default async function ProfilePage({
           />
         </label>
 
-        <div className="grid grid-cols-2 gap-4">
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClass}>Headshot</span>
-            {profile?.headshotUrl && (
-              <img
-                src={profile.headshotUrl}
-                alt="Current headshot"
-                className="h-16 w-16 rounded-full border border-line object-cover"
-              />
-            )}
-            <input
-              type="file"
-              name="headshot"
-              accept="image/*"
-              className="text-sm text-foreground-soft file:mr-3 file:rounded-md file:border file:border-line file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-foreground"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClass}>Resume</span>
-            {profile?.resumeUrl && (
-              <a
-                href={profile.resumeUrl}
-                className="text-sm text-accent underline underline-offset-2"
-                target="_blank"
-              >
-                Current resume
-              </a>
-            )}
-            <input
-              type="file"
-              name="resume"
-              accept="application/pdf"
-              className="text-sm text-foreground-soft file:mr-3 file:rounded-md file:border file:border-line file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-foreground"
-            />
-          </label>
-        </div>
+        <label className="flex flex-col gap-1.5">
+          <span className={labelClass}>Resume</span>
+          {profile?.resumeUrl && (
+            <a
+              href={profile.resumeUrl}
+              className="text-sm text-accent underline underline-offset-2"
+              target="_blank"
+            >
+              Current resume
+            </a>
+          )}
+          <input
+            type="file"
+            name="resume"
+            accept="application/pdf"
+            className="text-sm text-foreground-soft file:mr-3 file:rounded-md file:border file:border-line file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-foreground"
+          />
+        </label>
 
         <button
           type="submit"
