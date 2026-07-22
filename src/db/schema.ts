@@ -148,6 +148,7 @@ export const profiles = pgTable("profiles", {
     .unique()
     .references(() => users.id, { onDelete: "cascade" }),
   fullName: text("full_name").notNull(),
+  email: text("email").notNull(),
   headshotUrl: text("headshot_url"),
   linkedinUrl: text("linkedin_url"),
   resumeUrl: text("resume_url"),

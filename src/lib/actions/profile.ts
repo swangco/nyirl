@@ -23,6 +23,7 @@ export async function saveProfile(formData: FormData) {
   const userId = session.user.id;
 
   const fullName = String(formData.get("fullName") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
   const linkedinUrl = String(formData.get("linkedinUrl") ?? "").trim();
   const company = String(formData.get("company") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
@@ -61,6 +62,9 @@ export async function saveProfile(formData: FormData) {
 
   if (!fullName) {
     throw new Error("Full name is required");
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("Enter a valid email");
   }
 
   const headshot = formData.get("headshot");
@@ -104,6 +108,7 @@ export async function saveProfile(formData: FormData) {
       .update(profiles)
       .set({
         fullName,
+        email,
         linkedinUrl: linkedinUrl || null,
         company: company || null,
         title: title || null,
@@ -125,6 +130,7 @@ export async function saveProfile(formData: FormData) {
     await db.insert(profiles).values({
       userId,
       fullName,
+      email,
       linkedinUrl: linkedinUrl || null,
       company: company || null,
       title: title || null,

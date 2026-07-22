@@ -24,7 +24,6 @@ export async function GET(req: Request) {
   const [eligibleProfiles, upcomingEvents, upcomingLinks, allSends] = await Promise.all([
     db.query.profiles.findMany({
       where: eq(profiles.digestOptOut, false),
-      with: { user: true },
     }),
     db.query.events.findMany({ where: gte(events.date, now) }),
     db.query.curatedLinks.findMany({ where: gte(curatedLinks.eventDate, now) }),
@@ -42,8 +41,6 @@ export async function GET(req: Request) {
   let skippedEmpty = 0;
 
   for (const profile of eligibleProfiles) {
-    if (!profile.user?.email) continue;
-
     const alreadySent = sentByUser.get(profile.userId) ?? new Set<string>();
     const items = buildDigestItems(profile, upcomingEvents, upcomingLinks, alreadySent);
 
@@ -57,7 +54,7 @@ export async function GET(req: Request) {
     try {
       await resend.emails.send({
         from: "NY IRL <onboarding@resend.dev>",
-        to: profile.user.email,
+        to: profile.email,
         subject: "This week at NY IRL",
         html: renderDigestEmail(profile.fullName, items, unsubscribeUrl),
       });

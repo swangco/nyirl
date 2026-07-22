@@ -148,6 +148,21 @@ export default async function ProfilePage({
         </label>
 
         <label className="flex flex-col gap-1.5">
+          <span className={labelClass}>Email</span>
+          <input
+            name="email"
+            type="email"
+            defaultValue={profile?.email ?? session.user.email ?? ""}
+            required
+            className={inputClass}
+          />
+          <span className="text-xs text-foreground-soft">
+            Where your weekly digest and any host follow-ups go — defaults to
+            your sign-in email, but you can use a different one.
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
           <span className={labelClass}>LinkedIn URL</span>
           <input
             name="linkedinUrl"
