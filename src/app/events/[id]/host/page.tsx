@@ -137,17 +137,17 @@ export default async function HostDashboardPage({
 
               <div className="mt-4 flex gap-2">
                 <form action={decide.bind(null, "approved")}>
-                  <button className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
+                  <button className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
                     Approve
                   </button>
                 </form>
                 <form action={decide.bind(null, "waitlisted")}>
-                  <button className="rounded-md bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600">
+                  <button className="rounded-full bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600">
                     Waitlist
                   </button>
                 </form>
                 <form action={decide.bind(null, "declined")}>
-                  <button className="rounded-md border border-line bg-background px-3 py-1.5 text-xs font-medium text-foreground-soft hover:bg-line/40">
+                  <button className="rounded-full border border-line bg-background px-3 py-1.5 text-xs font-medium text-foreground-soft hover:bg-line/40">
                     Decline
                   </button>
                 </form>

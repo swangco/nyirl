@@ -16,13 +16,13 @@ export default function Home() {
       <div className="flex flex-col gap-3 sm:flex-row">
         <Link
           href="/events"
-          className="rounded-md bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
         >
           Discover events
         </Link>
         <Link
           href="/profile"
-          className="rounded-md border border-line bg-surface px-6 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-line/40"
+          className="rounded-full border border-line bg-surface px-6 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-line/40"
         >
           Your profile
         </Link>

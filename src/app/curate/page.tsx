@@ -65,7 +65,7 @@ export default async function CuratePage({
         />
         <button
           type="submit"
-          className="shrink-0 rounded-md bg-foreground px-5 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="shrink-0 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
         >
           Add
         </button>
@@ -101,7 +101,7 @@ export default async function CuratePage({
               )}
             </div>
             <form action={removeCuratedLink.bind(null, link.id)}>
-              <button className="shrink-0 rounded-md border border-line bg-background px-3 py-1.5 text-xs font-medium text-foreground-soft hover:bg-line/40">
+              <button className="shrink-0 rounded-full border border-line bg-background px-3 py-1.5 text-xs font-medium text-foreground-soft hover:bg-line/40">
                 Remove
               </button>
             </form>

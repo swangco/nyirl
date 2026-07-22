@@ -91,7 +91,7 @@ export default async function EventsPage() {
       {!profile && (
         <Link
           href="/sign-in"
-          className="mt-8 inline-block rounded-md bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="mt-8 inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
         >
           Sign in to see your fit
         </Link>

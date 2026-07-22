@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Newsreader } from "next/font/google";
+import { Geist_Mono, Lora, Manrope } from "next/font/google";
 import Link from "next/link";
 import { auth } from "@/auth";
 import "./globals.css";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
 });
 
@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const newsreader = Newsreader({
-  variable: "--font-newsreader",
+const lora = Lora({
+  variable: "--font-lora",
   subsets: ["latin"],
   weight: ["500", "600"],
 });
@@ -38,14 +38,14 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} h-full antialiased`}
+      className={`${manrope.variable} ${geistMono.variable} ${lora.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <header className="border-b border-line">
           <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
             <Link
               href="/"
-              className="font-serif text-lg font-semibold tracking-tight text-foreground"
+              className="rounded-full border border-line px-4 py-1.5 font-serif text-sm text-foreground"
             >
               NY IRL
             </Link>
@@ -65,21 +65,6 @@ export default async function RootLayout({
           </div>
         </header>
         <div className="flex-1">{children}</div>
-        <footer className="border-t border-line">
-          <div className="mx-auto flex max-w-3xl flex-col items-center gap-2 px-6 py-8 text-center sm:flex-row sm:justify-between sm:text-left">
-            <p className="text-sm text-foreground-soft">
-              Notes on NYC&apos;s startup and VC scene, before the events do.
-            </p>
-            <a
-              href="https://nyirl.beehiiv.com/?modal=signup"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0 rounded-md border border-line bg-surface px-5 py-2 text-sm font-medium text-foreground transition-colors hover:border-accent/40 hover:text-accent"
-            >
-              Subscribe to the newsletter
-            </a>
-          </div>
-        </footer>
       </body>
     </html>
   );

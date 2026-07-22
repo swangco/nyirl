@@ -72,7 +72,7 @@ export default async function ApplyPage({
       {!profile ? (
         <a
           href="/profile"
-          className="inline-block rounded-md bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
         >
           Complete your profile to apply
         </a>
@@ -83,7 +83,7 @@ export default async function ApplyPage({
           </p>
           <button
             type="submit"
-            className="rounded-md bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+            className="rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
           >
             Apply to attend
           </button>

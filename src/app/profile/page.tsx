@@ -171,7 +171,7 @@ export default async function ProfilePage({
 
         <button
           type="submit"
-          className="mt-2 self-start rounded-md bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="mt-2 self-start rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
         >
           Save profile
         </button>

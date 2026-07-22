@@ -22,7 +22,7 @@ export default function SignInPage() {
       >
         <button
           type="submit"
-          className="rounded-md bg-foreground px-6 py-3 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="rounded-full bg-foreground px-6 py-3 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
         >
           Continue with Google
         </button>
