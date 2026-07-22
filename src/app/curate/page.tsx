@@ -78,7 +78,7 @@ export default async function CuratePage({
         Host tool
       </p>
       <h1 className="font-serif text-3xl font-semibold tracking-tight mb-2">
-        Curate a link
+        Add to what you host
       </h1>
       <p className="text-sm text-foreground-soft mb-8">
         Paste a link to any event you&apos;re already reviewing — Partiful,
@@ -233,7 +233,7 @@ export default async function CuratePage({
         ))}
         {links.length === 0 && (
           <p className="text-sm text-foreground-soft">
-            No links curated yet.
+            Nothing added yet.
           </p>
         )}
       </div>

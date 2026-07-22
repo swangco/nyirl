@@ -65,7 +65,7 @@ export default async function RootLayout({
               </Link>
               {isHost && (
                 <Link href="/curate" className="hover:text-foreground">
-                  Curate
+                  Host tools
                 </Link>
               )}
             </nav>

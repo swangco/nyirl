@@ -333,7 +333,7 @@ export default async function ProfilePage({
               href="/curate"
               className="mt-6 inline-block text-sm text-accent underline underline-offset-2"
             >
-              Manage what you've curated ({allLinks.length} link
+              Manage what you host ({allLinks.length} link
               {allLinks.length === 1 ? "" : "s"}) →
             </Link>
           )}
