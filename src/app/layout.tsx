@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Lora, Manrope } from "next/font/google";
+import { Geist, Geist_Mono, Lora, Manrope } from "next/font/google";
 import Link from "next/link";
 import { auth } from "@/auth";
 import "./globals.css";
@@ -9,6 +9,12 @@ const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
 const manrope = Manrope({
   variable: "--font-manrope",
   subsets: ["latin"],
+});
+
+const geist = Geist({
+  variable: "--font-geist",
+  subsets: ["latin"],
+  weight: ["500", "600"],
 });
 
 const geistMono = Geist_Mono({
@@ -38,18 +44,18 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${manrope.variable} ${geistMono.variable} ${lora.variable} h-full antialiased`}
+      className={`${manrope.variable} ${geistMono.variable} ${lora.variable} ${geist.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <header className="border-b border-line">
-          <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
+          <div className="mx-auto flex max-w-4xl items-center justify-between px-8 py-6">
             <Link
               href="/"
-              className="rounded-full border border-line px-4 py-1.5 font-serif text-sm text-foreground"
+              className="font-geist text-sm font-semibold uppercase tracking-[0.22em] text-foreground"
             >
               NY IRL
             </Link>
-            <nav className="flex items-center gap-5 text-sm text-foreground-soft">
+            <nav className="flex items-center gap-6 text-sm text-foreground-soft">
               <Link href="/events" className="hover:text-foreground">
                 Events
               </Link>

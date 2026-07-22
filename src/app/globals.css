@@ -23,6 +23,7 @@
   --font-sans: var(--font-manrope);
   --font-serif: var(--font-lora);
   --font-mono: var(--font-geist-mono);
+  --font-geist: var(--font-geist);
 }
 
 body {
