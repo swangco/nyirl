@@ -3,14 +3,23 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { curatedLinks } from "@/db/schema";
-import { addCuratedLink, removeCuratedLink } from "@/lib/actions/curated-links";
+import {
+  addCuratedLink,
+  addCuratedLinksBulk,
+  removeCuratedLink,
+} from "@/lib/actions/curated-links";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
 
 export default async function CuratePage({
   searchParams,
 }: {
-  searchParams: Promise<{ added?: string; removed?: string }>;
+  searchParams: Promise<{
+    added?: string;
+    removed?: string;
+    bulkAdded?: string;
+    bulkEmpty?: string;
+  }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -24,7 +33,7 @@ export default async function CuratePage({
     );
   }
 
-  const { added, removed } = await searchParams;
+  const { added, removed, bulkAdded, bulkEmpty } = await searchParams;
 
   const links = await db.query.curatedLinks.findMany({
     orderBy: [desc(curatedLinks.createdAt)],
@@ -54,8 +63,18 @@ export default async function CuratePage({
           Link removed.
         </div>
       )}
+      {bulkAdded && (
+        <div className="mb-6 rounded-md border border-line bg-surface px-4 py-2.5 text-sm text-foreground">
+          Added {bulkAdded} link{bulkAdded === "1" ? "" : "s"} from your text.
+        </div>
+      )}
+      {bulkEmpty && (
+        <div className="mb-6 rounded-md border border-accent/30 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
+          Couldn&apos;t find any event links in that text.
+        </div>
+      )}
 
-      <form action={addCuratedLink} className="mb-10 flex gap-2">
+      <form action={addCuratedLink} className="mb-6 flex gap-2">
         <input
           name="url"
           type="url"
@@ -70,6 +89,31 @@ export default async function CuratePage({
           Add
         </button>
       </form>
+
+      <details className="mb-10 rounded-lg border border-line bg-surface p-4">
+        <summary className="cursor-pointer text-sm font-medium text-foreground">
+          Paste a whole post instead (e.g. from X)
+        </summary>
+        <p className="mt-2 mb-3 text-sm text-foreground-soft">
+          Drop in the text of a post or thread listing multiple events — it
+          pulls out every event link and adds them all at once.
+        </p>
+        <form action={addCuratedLinksBulk} className="flex flex-col gap-3">
+          <textarea
+            name="text"
+            required
+            rows={6}
+            placeholder="Paste your X post or thread text here..."
+            className="rounded-md border border-line bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-soft/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+          <button
+            type="submit"
+            className="self-start rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          >
+            Extract and add events
+          </button>
+        </form>
+      </details>
 
       <div className="flex flex-col gap-3">
         {links.map((link) => (
