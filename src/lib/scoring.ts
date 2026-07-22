@@ -1,7 +1,12 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { generateObject } from "ai";
 import { z } from "zod";
-import type { founderStageEnum, profiles, profileTypeEnum } from "@/db/schema";
+import type {
+  curatedLinks,
+  founderStageEnum,
+  profiles,
+  profileTypeEnum,
+} from "@/db/schema";
 
 type Profile = typeof profiles.$inferSelect;
 
@@ -178,10 +183,10 @@ const PROFILE_TYPE_KEYWORDS: Record<(typeof profileTypeEnum)[number], string[]> 
 /**
  * Recognized tier-1 hosts (Serena's actual discovery criteria, captured
  * July 22, 2026 — see playbooks/event-registrant-scoring.md in the
- * knowledge graph for the full reasoning). Deliberately a narrow,
- * growable allowlist: a host NOT on this list gets no penalty, only no
- * boost — guessing at reputation for an unrecognized name is worse than
- * an incomplete list.
+ * knowledge graph for the full reasoning; expanded after the April–July
+ * curation audit). Deliberately a growable allowlist: a host NOT on this
+ * list gets no penalty, only no boost — guessing at reputation for an
+ * unrecognized name is worse than an incomplete list.
  */
 const TIER_ONE_HOSTS = [
   "union square",
@@ -200,7 +205,49 @@ const TIER_ONE_HOSTS = [
   "yonas",
   "the collective",
   "versi",
+  // Added from the April–July curation audit:
+  "replit",
+  "revenuecat",
+  "y combinator",
+  " yc ",
+  "nvidia",
+  "antler",
+  "vercel",
+  "stripe",
+  "elevenlabs",
+  "databricks",
+  "mercury",
+  "first round",
+  "m13",
+  "mongodb",
+  "shopify",
+  "cursor",
+  "ramp",
+  "spc",
+  "modal",
+  "datadog",
+  "google deepmind",
+  "microsoft",
+  "aws",
+  "tiktok",
+  "brex",
+  "firstmark",
+  "gamma",
+  "speedrun",
+  "hubspot",
+  "suno",
+  "flybridge",
+  "xai",
+  "runway",
+  "columbia university",
+  "bergdorf goodman",
+  "lvmh",
 ];
+
+/** True if the given preview text mentions a recognized tier-1 host. */
+function isTierOneHost(text: string): boolean {
+  return TIER_ONE_HOSTS.some((host) => text.toLowerCase().includes(host));
+}
 
 /** Extracts an attendee count from scraped preview text, if present (e.g. Luma's "N attending"). */
 function extractAttendeeCount(text: string): number | null {
@@ -244,8 +291,7 @@ export function computeLinkFitScore(
     base = typeScore * 0.8 + bioBoost;
   }
 
-  const isTierOneHost = TIER_ONE_HOSTS.some((host) => text.includes(host));
-  const hostBoost = isTierOneHost ? 15 : 0;
+  const hostBoost = isTierOneHost(text) ? 15 : 0;
 
   const attendeeCount = extractAttendeeCount(text);
   let sizeAdjustment = 0;
@@ -255,4 +301,42 @@ export function computeLinkFitScore(
   }
 
   return Math.round(Math.min(100, Math.max(0, base + hostBoost + sizeAdjustment)));
+}
+
+const HOST_TIER_POINTS = { unknown: 0, tier_1: 40 };
+const EXCLUSIVITY_POINTS = { open: 5, capped: 15, invite_only: 25 };
+const FORMAT_POINTS = {
+  expo: 5,
+  mixer: 10,
+  workshop: 15,
+  hackathon: 15,
+  dinner: 20,
+};
+const LOCALITY_POINTS = { out_of_town: 0, nyc: 15 };
+
+type CuratedLink = typeof curatedLinks.$inferSelect;
+
+/**
+ * Deterministic 0-100 "how good is this listing" score for a curated link,
+ * independent of any one visitor's profile — the April–July curation audit
+ * (playbooks/event-registrant-scoring.md) found host prestige, exclusivity,
+ * format, and locality already implicitly drove which links got curated at
+ * all. This makes that judgment explicit so it can order a category tile
+ * before a visitor has a profile, and blend with personal fit once they do.
+ */
+export function computeCurationQualityScore(
+  link: Pick<CuratedLink, "title" | "description" | "exclusivity" | "format" | "outOfTown">,
+): number {
+  const text = `${link.title ?? ""} ${link.description ?? ""}`;
+  const hostPoints = isTierOneHost(text) ? HOST_TIER_POINTS.tier_1 : HOST_TIER_POINTS.unknown;
+  const exclusivityPoints = EXCLUSIVITY_POINTS[link.exclusivity];
+  const formatPoints = FORMAT_POINTS[link.format];
+  const localityPoints = link.outOfTown ? LOCALITY_POINTS.out_of_town : LOCALITY_POINTS.nyc;
+
+  return hostPoints + exclusivityPoints + formatPoints + localityPoints;
+}
+
+/** Same 60/40 split computeCompositeScore uses for structural/semantic. */
+export function computeBlendedLinkScore(personalFit: number, curationQuality: number): number {
+  return Math.round(0.6 * personalFit + 0.4 * curationQuality);
 }

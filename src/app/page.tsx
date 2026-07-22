@@ -1,9 +1,14 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, gte } from "drizzle-orm";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { curatedLinks, eventCategoryEnum, events, profiles } from "@/db/schema";
-import { computeLinkFitScore, computeStructuralScore } from "@/lib/scoring";
+import {
+  computeBlendedLinkScore,
+  computeCurationQualityScore,
+  computeLinkFitScore,
+  computeStructuralScore,
+} from "@/lib/scoring";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -53,12 +58,18 @@ export default async function Home() {
     );
   }
 
+  const now = new Date();
+
   const [allEvents, links] = await Promise.all([
     db.query.events.findMany({
+      where: gte(events.date, now),
       orderBy: [asc(events.date)],
       with: { host: { with: { profile: true } } },
     }),
-    db.query.curatedLinks.findMany({ orderBy: [desc(curatedLinks.createdAt)] }),
+    db.query.curatedLinks.findMany({
+      where: gte(curatedLinks.eventDate, now),
+      orderBy: [desc(curatedLinks.createdAt)],
+    }),
   ]);
 
   const categoryCounts = eventCategoryEnum.map((category) => ({
@@ -68,36 +79,51 @@ export default async function Home() {
       links.filter((l) => l.category === category).length,
   }));
 
-  const recommendations = isProfileComplete
-    ? [
-        ...allEvents.map((event) => ({
-          kind: "event" as const,
-          id: event.id,
-          title: event.title,
-          subtitle: `${event.date.toLocaleDateString(undefined, {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-          })}${event.host?.profile?.fullName ? ` · hosted by ${event.host.profile.fullName}` : ""}`,
-          description: event.description,
-          image: null as string | null,
-          href: `/events/${event.id}/apply`,
-          external: false,
-          score: computeStructuralScore(profile!, event.criteriaWeights),
-        })),
-        ...links.map((link) => ({
-          kind: "link" as const,
-          id: link.id,
-          title: link.title || link.sourceUrl,
-          subtitle: "From around town",
-          description: link.description,
-          image: link.imageUrl,
-          href: link.sourceUrl,
-          external: true,
-          score: computeLinkFitScore(profile!, link),
-        })),
-      ].sort((a, b) => b.score - a.score)
+  // Events are always hosted by Serena in this app's current single-host
+  // model — they're her own track record, not third-party curation, so
+  // they're pinned above scored links rather than competing on the rubric.
+  const hostedEvents = allEvents.map((event) => ({
+    kind: "event" as const,
+    id: event.id,
+    title: event.title,
+    subtitle: `${event.date.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    })} · Hosted by NY IRL`,
+    description: event.description,
+    image: null as string | null,
+    href: `/events/${event.id}/apply`,
+    external: false,
+    score: isProfileComplete ? computeStructuralScore(profile!, event.criteriaWeights) : null,
+  }));
+
+  const scoredLinks = isProfileComplete
+    ? links
+        .map((link) => {
+          const fit = computeLinkFitScore(profile!, link);
+          const cqs = computeCurationQualityScore(link);
+          return {
+            kind: "link" as const,
+            id: link.id,
+            title: link.title || link.sourceUrl,
+            subtitle: "From around town",
+            description: link.description,
+            image: link.imageUrl,
+            href: link.sourceUrl,
+            external: true,
+            score: computeBlendedLinkScore(fit, cqs),
+          };
+        })
+        .sort((a, b) => b.score - a.score)
     : [];
+
+  const recommendations = isProfileComplete ? [...hostedEvents, ...scoredLinks] : [];
+
+  const techWeekItems = [
+    ...allEvents.filter((e) => e.tags?.includes("tech_week_cluster")),
+    ...links.filter((l) => l.tags?.includes("tech_week_cluster")),
+  ];
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
@@ -125,6 +151,29 @@ export default async function Home() {
         ))}
       </div>
 
+      {techWeekItems.length > 0 && (
+        <div className="mb-14">
+          <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
+            This week
+          </p>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {techWeekItems.map((item) => (
+              <a
+                key={item.id}
+                href={"sourceUrl" in item ? item.sourceUrl : `/events/${item.id}/apply`}
+                target={"sourceUrl" in item ? "_blank" : undefined}
+                rel={"sourceUrl" in item ? "noopener noreferrer" : undefined}
+                className="w-56 shrink-0 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-accent/40"
+              >
+                <p className="font-medium text-foreground truncate">
+                  {"sourceUrl" in item ? item.title || item.sourceUrl : item.title}
+                </p>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
       <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
         Recommended for you
       </p>
@@ -145,7 +194,8 @@ export default async function Home() {
       ) : (
         <>
           <p className="text-sm text-foreground-soft mb-6">
-            Ranked by fit against your profile.
+            Your own events first, then everything else ranked by fit against
+            your profile.
           </p>
           <div className="flex flex-col gap-3">
             {recommendations.map((item) => (
@@ -177,14 +227,16 @@ export default async function Home() {
                     </p>
                   )}
                 </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-mono text-lg font-semibold tabular-nums">
-                    {item.score}
+                {item.score !== null && (
+                  <div className="shrink-0 text-right">
+                    <div className="font-mono text-lg font-semibold tabular-nums">
+                      {item.score}
+                    </div>
+                    <div className="text-[11px] uppercase tracking-wide text-foreground-soft/70">
+                      fit
+                    </div>
                   </div>
-                  <div className="text-[11px] uppercase tracking-wide text-foreground-soft/70">
-                    fit
-                  </div>
-                </div>
+                )}
               </a>
             ))}
             {recommendations.length === 0 && (

@@ -2,7 +2,12 @@ import { desc } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { curatedLinks, eventCategoryEnum } from "@/db/schema";
+import {
+  curatedLinks,
+  eventCategoryEnum,
+  linkExclusivityEnum,
+  linkFormatEnum,
+} from "@/db/schema";
 import {
   addCuratedLink,
   addCuratedLinksBulk,
@@ -23,6 +28,20 @@ const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   marketing_gtm: "Marketing & GTM",
   design: "Design",
   networking: "Networking",
+};
+
+const EXCLUSIVITY_LABELS: Record<(typeof linkExclusivityEnum)[number], string> = {
+  open: "Open / public",
+  capped: "RSVP-capped",
+  invite_only: "Invite-only",
+};
+
+const FORMAT_LABELS: Record<(typeof linkFormatEnum)[number], string> = {
+  expo: "Expo / fair",
+  mixer: "Mixer / social",
+  workshop: "Workshop / panel",
+  hackathon: "Hackathon",
+  dinner: "Dinner / salon",
 };
 
 export default async function CuratePage({
@@ -88,32 +107,67 @@ export default async function CuratePage({
         </div>
       )}
 
-      <form action={addCuratedLink} className="mb-6 flex gap-2">
+      <form action={addCuratedLink} className="mb-6 flex flex-col gap-2">
         <input
           name="url"
           type="url"
           required
           placeholder="https://partiful.com/e/..."
-          className="flex-1 rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-soft/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          className="rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-soft/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
-        <select
-          name="category"
-          required
-          defaultValue={eventCategoryEnum[0]}
-          className="rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-        >
-          {eventCategoryEnum.map((category) => (
-            <option key={category} value={category}>
-              {CATEGORY_LABELS[category]}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="shrink-0 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
-        >
-          Add
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <input
+            name="eventDate"
+            type="date"
+            required
+            title="Event date"
+            className="rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+          <select
+            name="category"
+            required
+            defaultValue={eventCategoryEnum[0]}
+            className="rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            {eventCategoryEnum.map((category) => (
+              <option key={category} value={category}>
+                {CATEGORY_LABELS[category]}
+              </option>
+            ))}
+          </select>
+          <select
+            name="exclusivity"
+            defaultValue="capped"
+            className="rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            {linkExclusivityEnum.map((exclusivity) => (
+              <option key={exclusivity} value={exclusivity}>
+                {EXCLUSIVITY_LABELS[exclusivity]}
+              </option>
+            ))}
+          </select>
+          <select
+            name="format"
+            defaultValue="mixer"
+            className="rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            {linkFormatEnum.map((format) => (
+              <option key={format} value={format}>
+                {FORMAT_LABELS[format]}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground-soft">
+            <input name="outOfTown" type="checkbox" />
+            Out of town
+          </label>
+          <button
+            type="submit"
+            className="shrink-0 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          >
+            Add
+          </button>
+        </div>
       </form>
 
       <details className="mb-10 rounded-lg border border-line bg-surface p-4">

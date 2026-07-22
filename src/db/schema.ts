@@ -96,6 +96,21 @@ export const eventCategoryEnum = [
   "networking",
 ] as const;
 
+// --- Curation Quality Score inputs (curatedLinks only — see computeCurationQualityScore) ---
+// Host tier isn't a stored field: it's detected from title/description text against
+// the TIER_ONE_HOSTS allowlist in lib/scoring.ts, same mechanism computeLinkFitScore
+// already uses. These two fields plus outOfTown are the parts a human has to judge.
+
+export const linkExclusivityEnum = ["open", "capped", "invite_only"] as const;
+
+export const linkFormatEnum = [
+  "expo",
+  "mixer",
+  "workshop",
+  "hackathon",
+  "dinner",
+] as const;
+
 export const profiles = pgTable("profiles", {
   id: text("id")
     .primaryKey()
@@ -138,6 +153,7 @@ export const events = pgTable("events", {
   typeCaps: text("type_caps"), // JSON string: { profile_type: max_share }
   excludeRules: text("exclude_rules"), // JSON string: string[]
   category: text("category").$type<(typeof eventCategoryEnum)[number]>().notNull(),
+  tags: text("tags").array(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 
@@ -208,6 +224,14 @@ export const curatedLinks = pgTable("curated_links", {
   description: text("description"),
   imageUrl: text("image_url"),
   category: text("category").$type<(typeof eventCategoryEnum)[number]>().notNull(),
+  eventDate: timestamp("event_date", { mode: "date" }),
+  exclusivity: text("exclusivity")
+    .$type<(typeof linkExclusivityEnum)[number]>()
+    .notNull()
+    .default("capped"),
+  format: text("format").$type<(typeof linkFormatEnum)[number]>().notNull().default("mixer"),
+  outOfTown: boolean("out_of_town").notNull().default(false),
+  tags: text("tags").array(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 

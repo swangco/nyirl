@@ -1,9 +1,15 @@
-import { asc, desc } from "drizzle-orm";
+import { asc, desc, eq, gte } from "drizzle-orm";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { curatedLinks, eventCategoryEnum, events } from "@/db/schema";
+import { curatedLinks, eventCategoryEnum, events, profiles } from "@/db/schema";
+import {
+  computeBlendedLinkScore,
+  computeCurationQualityScore,
+  computeLinkFitScore,
+  computeStructuralScore,
+} from "@/lib/scoring";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -35,44 +41,71 @@ export default async function CategoryPage({
   }
   const category = categoryParam as (typeof eventCategoryEnum)[number];
 
+  const profile = await db.query.profiles.findFirst({
+    where: eq(profiles.userId, session.user.id),
+  });
+  const isProfileComplete =
+    !!profile?.fullName &&
+    (profile.profileType?.length ?? 0) > 0 &&
+    !!profile.bioBlurb?.trim();
+
+  const now = new Date();
+
   const [categoryEvents, categoryLinks] = await Promise.all([
     db.query.events.findMany({
-      where: (events, { eq }) => eq(events.category, category),
+      where: (events, { and, eq, gte }) =>
+        and(eq(events.category, category), gte(events.date, now)),
       orderBy: [asc(events.date)],
       with: { host: { with: { profile: true } } },
     }),
     db.query.curatedLinks.findMany({
-      where: (curatedLinks, { eq }) => eq(curatedLinks.category, category),
+      where: (curatedLinks, { and, eq, gte }) =>
+        and(eq(curatedLinks.category, category), gte(curatedLinks.eventDate, now)),
       orderBy: [desc(curatedLinks.createdAt)],
     }),
   ]);
 
-  const items = [
-    ...categoryEvents.map((event) => ({
-      kind: "event" as const,
-      id: event.id,
-      title: event.title,
-      subtitle: `${event.date.toLocaleDateString(undefined, {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-      })}${event.host?.profile?.fullName ? ` · hosted by ${event.host.profile.fullName}` : ""}`,
-      description: event.description,
-      image: null as string | null,
-      href: `/events/${event.id}/apply`,
-      external: false,
-    })),
-    ...categoryLinks.map((link) => ({
-      kind: "link" as const,
-      id: link.id,
-      title: link.title || link.sourceUrl,
-      subtitle: "From around town",
-      description: link.description,
-      image: link.imageUrl,
-      href: link.sourceUrl,
-      external: true,
-    })),
-  ];
+  // Events are always hosted by Serena in this app's current single-host
+  // model, so they're pinned above scored links rather than competing on
+  // the rubric — see the April–July curation audit for the reasoning.
+  const hostedEvents = categoryEvents.map((event) => ({
+    kind: "event" as const,
+    id: event.id,
+    title: event.title,
+    subtitle: `${event.date.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    })} · Hosted by NY IRL`,
+    description: event.description,
+    image: null as string | null,
+    href: `/events/${event.id}/apply`,
+    external: false,
+    score: isProfileComplete && profile ? computeStructuralScore(profile, event.criteriaWeights) : null,
+  }));
+
+  const scoredLinks = categoryLinks
+    .map((link) => {
+      const cqs = computeCurationQualityScore(link);
+      const score =
+        isProfileComplete && profile
+          ? computeBlendedLinkScore(computeLinkFitScore(profile, link), cqs)
+          : cqs;
+      return {
+        kind: "link" as const,
+        id: link.id,
+        title: link.title || link.sourceUrl,
+        subtitle: "From around town",
+        description: link.description,
+        image: link.imageUrl,
+        href: link.sourceUrl,
+        external: true,
+        score,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const items = [...hostedEvents, ...scoredLinks];
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
@@ -116,6 +149,16 @@ export default async function CategoryPage({
                 </p>
               )}
             </div>
+            {item.score !== null && (
+              <div className="shrink-0 text-right">
+                <div className="font-mono text-lg font-semibold tabular-nums">
+                  {item.score}
+                </div>
+                <div className="text-[11px] uppercase tracking-wide text-foreground-soft/70">
+                  {isProfileComplete ? "fit" : "quality"}
+                </div>
+              </div>
+            )}
           </a>
         ))}
         {items.length === 0 && (
