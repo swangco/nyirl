@@ -7,7 +7,7 @@ export default function Home() {
         NY IRL
       </h1>
       <p className="max-w-sm font-serif text-xl text-foreground text-balance">
-        Discover the right rooms to be in. Curated to your profile.
+        Be in the right room. Curated to your profile.
       </p>
       <div className="flex flex-col gap-3 pt-4 sm:flex-row">
         <Link
