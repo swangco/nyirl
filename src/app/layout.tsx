@@ -51,6 +51,21 @@ export default function RootLayout({
           </div>
         </header>
         <div className="flex-1">{children}</div>
+        <footer className="border-t border-line">
+          <div className="mx-auto flex max-w-3xl flex-col items-center gap-2 px-6 py-8 text-center sm:flex-row sm:justify-between sm:text-left">
+            <p className="text-sm text-foreground-soft">
+              Notes on NYC&apos;s startup and VC scene, before the events do.
+            </p>
+            <a
+              href="https://nyirl.beehiiv.com/?modal=signup"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 rounded-md border border-line bg-surface px-5 py-2 text-sm font-medium text-foreground transition-colors hover:border-accent/40 hover:text-accent"
+            >
+              Subscribe to the newsletter
+            </a>
+          </div>
+        </footer>
       </body>
     </html>
   );
