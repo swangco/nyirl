@@ -36,6 +36,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${manrope.variable} ${geistMono.variable} ${lora.variable} ${geist.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
