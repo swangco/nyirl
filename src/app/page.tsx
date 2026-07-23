@@ -48,12 +48,8 @@ export default async function Home() {
           NYC tech events
         </span>
         <h1 className="max-w-xl text-balance text-4xl font-bold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
-          Be in the right room.
+          Find an event worth your time
         </h1>
-        <p className="max-w-md text-balance text-lg leading-relaxed text-foreground-soft">
-          A personal concierge for NYC tech events. Build a profile once — then
-          see what&apos;s actually worth your time, scored to your fit.
-        </p>
         <Link
           href="/sign-in"
           className="rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
