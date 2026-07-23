@@ -1,14 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f9f7f1;
-  --surface: #fdfcf8;
-  --foreground: #0a0a0a;
-  --foreground-soft: #62748e;
-  --line: #e5e2d5;
-  --accent: #101828;
-  --accent-hover: #2a3444;
-  --accent-soft: #10182814;
+  /* Sharp tech register — light, high-contrast, cool neutrals.
+     Luma / Vercel direction, not warm boutique. */
+  --background: #fafafa;
+  --surface: #ffffff;
+  --foreground: #09090b;
+  --foreground-soft: #71717a;
+  --line: #e4e4e7;
+  --accent: #18181b;
+  --accent-hover: #27272a;
+  --accent-soft: #18181b0d;
+  --radius: 0.625rem;
 }
 
 @theme inline {
@@ -20,14 +23,18 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
-  --font-sans: var(--font-manrope);
-  --font-serif: var(--font-lora);
+  --font-sans: var(--font-geist);
+  --font-serif: var(--font-geist);
   --font-mono: var(--font-geist-mono);
-  --font-geist: var(--font-geist);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-manrope), Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }

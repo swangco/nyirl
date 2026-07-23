@@ -9,6 +9,7 @@ import {
   computeLinkFitScore,
   computeStructuralScore,
 } from "@/lib/scoring";
+import { ScoreBadge } from "@/components/score-badge";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -41,16 +42,21 @@ export default async function Home() {
   // Signed out — a minimal landing, not the list.
   if (!session?.user?.id) {
     return (
-      <main className="mx-auto flex max-w-2xl flex-1 flex-col items-center justify-center gap-10 px-6 py-32 text-center">
-        <h1 className="font-geist text-4xl font-semibold uppercase tracking-[0.14em] text-foreground sm:text-5xl sm:tracking-[0.16em]">
-          NY IRL
+      <main className="mx-auto flex max-w-2xl flex-1 flex-col items-center justify-center gap-8 px-6 py-28 text-center">
+        <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 font-mono text-xs uppercase tracking-[0.14em] text-foreground-soft">
+          <span className="h-1.5 w-1.5 rounded-full bg-foreground" />
+          NYC tech events
+        </span>
+        <h1 className="max-w-xl text-balance text-4xl font-bold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
+          Be in the right room.
         </h1>
-        <p className="max-w-sm font-serif text-xl text-foreground text-balance">
-          Be in the right room. Curated to your profile.
+        <p className="max-w-md text-balance text-lg leading-relaxed text-foreground-soft">
+          A personal concierge for NYC tech events. Build a profile once — then
+          see what&apos;s actually worth your time, scored to your fit.
         </p>
         <Link
           href="/sign-in"
-          className="rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
         >
           Sign in to discover events
         </Link>
@@ -127,25 +133,25 @@ export default async function Home() {
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
-      <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
+      <p className="mb-2 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
         Discover
       </p>
-      <h1 className="font-serif text-3xl font-semibold tracking-tight mb-8">
+      <h1 className="mb-8 text-3xl font-bold tracking-tight text-balance">
         Browse by category
       </h1>
 
-      <div className="mb-14 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="mb-14 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {categoryCounts.map(({ category, count }) => (
           <Link
             key={category}
             href={`/category/${category}`}
-            className="rounded-lg border border-line bg-surface p-4 transition-colors hover:border-accent/40"
+            className="group flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-foreground/25"
           >
-            <p className="font-medium text-foreground">
-              {CATEGORY_LABELS[category]}
+            <p className="font-mono text-xs tabular-nums text-foreground-soft">
+              {String(count).padStart(2, "0")}
             </p>
-            <p className="font-mono text-xs text-foreground-soft">
-              {count} {count === 1 ? "listing" : "listings"}
+            <p className="font-semibold tracking-tight text-foreground">
+              {CATEGORY_LABELS[category]}
             </p>
           </Link>
         ))}
@@ -153,19 +159,19 @@ export default async function Home() {
 
       {techWeekItems.length > 0 && (
         <div className="mb-14">
-          <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
+          <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
             This week
           </p>
-          <div className="flex gap-3 overflow-x-auto pb-1">
+          <div className="flex gap-2.5 overflow-x-auto pb-1">
             {techWeekItems.map((item) => (
               <a
                 key={item.id}
                 href={"sourceUrl" in item ? item.sourceUrl : `/events/${item.id}/apply`}
                 target={"sourceUrl" in item ? "_blank" : undefined}
                 rel={"sourceUrl" in item ? "noopener noreferrer" : undefined}
-                className="w-56 shrink-0 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-accent/40"
+                className="w-56 shrink-0 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-foreground/25"
               >
-                <p className="font-medium text-foreground truncate">
+                <p className="truncate font-semibold tracking-tight text-foreground">
                   {"sourceUrl" in item ? item.title || item.sourceUrl : item.title}
                 </p>
               </a>
@@ -174,37 +180,37 @@ export default async function Home() {
         </div>
       )}
 
-      <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
+      <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
         Recommended for you
       </p>
 
       {!isProfileComplete ? (
-        <div className="rounded-lg border border-accent/30 bg-accent-soft p-6 text-center">
-          <p className="mb-4 text-sm text-foreground">
+        <div className="rounded-lg border border-line bg-surface p-6">
+          <p className="mb-4 text-sm leading-relaxed text-foreground-soft">
             Recommendations are scored against your profile — build yours
             first to see what&apos;s worth your time.
           </p>
           <Link
             href="/profile"
-            className="inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+            className="inline-block rounded-full bg-foreground px-5 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
           >
             Build your profile
           </Link>
         </div>
       ) : (
         <>
-          <p className="text-sm text-foreground-soft mb-6">
+          <p className="mb-6 text-sm leading-relaxed text-foreground-soft">
             Your own events first, then everything else ranked by fit against
             your profile.
           </p>
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2.5">
             {recommendations.map((item) => (
               <a
                 key={`${item.kind}-${item.id}`}
                 href={item.href}
                 target={item.external ? "_blank" : undefined}
                 rel={item.external ? "noopener noreferrer" : undefined}
-                className="flex items-start gap-4 rounded-lg border border-line bg-surface p-5 transition-colors hover:border-accent/40"
+                className="group flex items-center gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-foreground/25"
               >
                 {item.image && (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -215,28 +221,19 @@ export default async function Home() {
                   />
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="font-mono text-xs uppercase tracking-[0.1em] text-accent mb-1">
+                  <p className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-foreground-soft">
                     {item.subtitle}
                   </p>
-                  <h2 className="font-serif text-lg font-semibold text-foreground">
+                  <h2 className="truncate text-base font-semibold tracking-tight text-foreground">
                     {item.title}
                   </h2>
                   {item.description && (
-                    <p className="mt-1 truncate text-sm text-foreground-soft">
+                    <p className="mt-0.5 truncate text-sm text-foreground-soft">
                       {item.description}
                     </p>
                   )}
                 </div>
-                {item.score !== null && (
-                  <div className="shrink-0 text-right">
-                    <div className="font-mono text-lg font-semibold tabular-nums">
-                      {item.score}
-                    </div>
-                    <div className="text-[11px] uppercase tracking-wide text-foreground-soft/70">
-                      fit
-                    </div>
-                  </div>
-                )}
+                {item.score !== null && <ScoreBadge score={item.score} label="fit" />}
               </a>
             ))}
             {recommendations.length === 0 && (

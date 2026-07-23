@@ -10,6 +10,7 @@ import {
   computeLinkFitScore,
   computeStructuralScore,
 } from "@/lib/scoring";
+import { ScoreBadge } from "@/components/score-badge";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -114,22 +115,22 @@ export default async function CategoryPage({
     <main className="mx-auto max-w-2xl px-6 py-12">
       <Link
         href="/"
-        className="mb-3 inline-block font-mono text-xs uppercase tracking-[0.14em] text-accent hover:text-accent-hover"
+        className="mb-4 inline-block font-mono text-xs uppercase tracking-[0.14em] text-foreground-soft transition-colors hover:text-foreground"
       >
         ← All categories
       </Link>
-      <h1 className="font-serif text-3xl font-semibold tracking-tight mb-8">
+      <h1 className="mb-8 text-3xl font-bold tracking-tight text-balance">
         {CATEGORY_LABELS[category]}
       </h1>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2.5">
         {items.map((item) => (
           <a
             key={`${item.kind}-${item.id}`}
             href={item.href}
             target={item.external ? "_blank" : undefined}
             rel={item.external ? "noopener noreferrer" : undefined}
-            className="flex items-start gap-4 rounded-lg border border-line bg-surface p-5 transition-colors hover:border-accent/40"
+            className="group flex items-center gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-foreground/25"
           >
             {item.image && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -140,27 +141,23 @@ export default async function CategoryPage({
               />
             )}
             <div className="min-w-0 flex-1">
-              <p className="font-mono text-xs uppercase tracking-[0.1em] text-accent mb-1">
+              <p className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-foreground-soft">
                 {item.subtitle}
               </p>
-              <h2 className="font-serif text-lg font-semibold text-foreground">
+              <h2 className="truncate text-base font-semibold tracking-tight text-foreground">
                 {item.title}
               </h2>
               {item.description && (
-                <p className="mt-1 truncate text-sm text-foreground-soft">
+                <p className="mt-0.5 truncate text-sm text-foreground-soft">
                   {item.description}
                 </p>
               )}
             </div>
             {item.score !== null && (
-              <div className="shrink-0 text-right">
-                <div className="font-mono text-lg font-semibold tabular-nums">
-                  {item.score}
-                </div>
-                <div className="text-[11px] uppercase tracking-wide text-foreground-soft/70">
-                  {isProfileComplete ? "fit" : "quality"}
-                </div>
-              </div>
+              <ScoreBadge
+                score={item.score}
+                label={isProfileComplete ? "fit" : "quality"}
+              />
             )}
           </a>
         ))}

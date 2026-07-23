@@ -39,17 +39,17 @@ export default async function ApplyPage({
 
   return (
     <main className="mx-auto max-w-xl px-6 py-12">
-      <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
+      <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
         {event.date.toLocaleDateString(undefined, {
           weekday: "long",
           month: "long",
           day: "numeric",
         })}
       </p>
-      <h1 className="font-serif text-3xl font-semibold tracking-tight mb-4 text-balance">
+      <h1 className="mb-4 text-3xl font-bold tracking-tight text-balance">
         {event.title}
       </h1>
-      <p className="mb-8 text-foreground-soft">{event.description}</p>
+      <p className="mb-8 leading-relaxed text-foreground-soft">{event.description}</p>
 
       {submitted && (
         <div className="mb-6 rounded-md border border-line bg-surface px-4 py-2.5 text-sm text-foreground">
@@ -58,13 +58,13 @@ export default async function ApplyPage({
       )}
 
       {already && (
-        <div className="mb-6 rounded-md border border-accent/30 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
+        <div className="mb-6 rounded-md border border-foreground/20 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
           You&apos;ve already applied to this event.
         </div>
       )}
 
       {required && (
-        <div className="mb-6 rounded-md border border-accent/30 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
+        <div className="mb-6 rounded-md border border-foreground/20 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
           Complete your profile before applying.
         </div>
       )}
@@ -72,7 +72,7 @@ export default async function ApplyPage({
       {!profile ? (
         <a
           href="/profile"
-          className="inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
         >
           Complete your profile to apply
         </a>
@@ -83,7 +83,7 @@ export default async function ApplyPage({
           </p>
           <button
             type="submit"
-            className="rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+            className="rounded-full bg-foreground px-6 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
           >
             Apply to attend
           </button>

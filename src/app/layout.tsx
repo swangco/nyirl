@@ -1,36 +1,34 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Lora, Manrope } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { auth } from "@/auth";
 import "./globals.css";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
 
-const manrope = Manrope({
-  variable: "--font-manrope",
-  subsets: ["latin"],
-});
-
 const geist = Geist({
   variable: "--font-geist",
   subsets: ["latin"],
-  weight: ["500", "600"],
+  weight: ["400", "500", "600", "700"],
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
-});
-
-const lora = Lora({
-  variable: "--font-lora",
-  subsets: ["latin"],
-  weight: ["500", "600"],
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
-  title: "NY IRL",
-  description: "Curated events, curated the right way.",
+  title: "NY IRL — Curated NYC tech events",
+  description:
+    "A personal concierge for NYC tech events. Build a profile once, and see what's actually worth your time — scored to your fit.",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: "#fafafa",
 };
 
 export default async function RootLayout({
@@ -44,26 +42,35 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${manrope.variable} ${geistMono.variable} ${lora.variable} ${geist.variable} h-full antialiased`}
+      className={`${geistMono.variable} ${geist.variable} bg-background h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <header className="border-b border-line">
-          <div className="mx-auto flex max-w-4xl items-center justify-between px-8 py-6">
+        <header className="sticky top-0 z-50 border-b border-line bg-background/80 backdrop-blur-md">
+          <div className="mx-auto flex max-w-2xl items-center justify-between px-6 py-4">
             <Link
               href="/"
-              className="font-geist text-sm font-semibold uppercase tracking-[0.22em] text-foreground"
+              className="text-sm font-bold uppercase tracking-[0.2em] text-foreground"
             >
               NY IRL
             </Link>
-            <nav className="flex items-center gap-6 text-sm text-foreground-soft">
-              <Link href="/" className="hover:text-foreground">
+            <nav className="flex items-center gap-1 text-sm">
+              <Link
+                href="/"
+                className="rounded-md px-3 py-1.5 font-medium text-foreground-soft transition-colors hover:bg-accent-soft hover:text-foreground"
+              >
                 Discover
               </Link>
-              <Link href="/profile" className="hover:text-foreground">
+              <Link
+                href="/profile"
+                className="rounded-md px-3 py-1.5 font-medium text-foreground-soft transition-colors hover:bg-accent-soft hover:text-foreground"
+              >
                 Profile
               </Link>
               {isHost && (
-                <Link href="/curate" className="hover:text-foreground">
+                <Link
+                  href="/curate"
+                  className="rounded-md px-3 py-1.5 font-medium text-foreground-soft transition-colors hover:bg-accent-soft hover:text-foreground"
+                >
                   Host
                 </Link>
               )}

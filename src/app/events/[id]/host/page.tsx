@@ -56,10 +56,10 @@ export default async function HostDashboardPage({
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
+      <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
         Host dashboard
       </p>
-      <h1 className="font-serif text-3xl font-semibold tracking-tight mb-2">
+      <h1 className="mb-2 text-3xl font-bold tracking-tight text-balance">
         {event.title}
       </h1>
       <p className="text-sm text-foreground-soft mb-4">
@@ -110,7 +110,7 @@ export default async function HostDashboardPage({
                     <a
                       href={profile.linkedinUrl}
                       target="_blank"
-                      className="text-xs text-accent underline underline-offset-2"
+                      className="text-xs font-medium text-foreground underline underline-offset-4 decoration-line hover:decoration-foreground"
                     >
                       LinkedIn
                     </a>

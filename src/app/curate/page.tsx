@@ -74,13 +74,13 @@ export default async function CuratePage({
 
   return (
     <main className="mx-auto max-w-xl px-6 py-12">
-      <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
+      <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
         Host tool
       </p>
-      <h1 className="font-serif text-3xl font-semibold tracking-tight mb-2">
+      <h1 className="mb-2 text-3xl font-bold tracking-tight text-balance">
         Add to what you host
       </h1>
-      <p className="text-sm text-foreground-soft mb-8">
+      <p className="mb-8 text-sm leading-relaxed text-foreground-soft">
         Paste a link to any event you&apos;re already reviewing — Partiful,
         Luma, wherever. Pulls the title, description, and image from that
         page so you don&apos;t have to retype it.
@@ -102,7 +102,7 @@ export default async function CuratePage({
         </div>
       )}
       {bulkEmpty && (
-        <div className="mb-6 rounded-md border border-accent/30 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
+        <div className="mb-6 rounded-md border border-foreground/20 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
           Couldn&apos;t find any event links in that text.
         </div>
       )}
@@ -214,7 +214,7 @@ export default async function CuratePage({
                 href={link.sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-medium text-foreground hover:text-accent"
+                className="font-semibold tracking-tight text-foreground hover:text-foreground-soft"
               >
                 {link.title || link.sourceUrl}
               </a>
