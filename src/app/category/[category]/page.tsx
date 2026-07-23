@@ -5,9 +5,14 @@ import { after } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { curatedLinks, eventCategoryEnum, events, profiles } from "@/db/schema";
+import { EmptyState } from "@/components/empty-state";
+import { FitScore, ReasonChip } from "@/components/fit-score";
+import { ListingCard } from "@/components/listing-card";
+import { PageHeader } from "@/components/page-header";
+import { PageShell } from "@/components/page-shell";
 import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
 import { trackedHref } from "@/lib/links";
-import { computeStructuralScore, scoreCuratedLink } from "@/lib/scoring";
+import { computeStructuralScore, describeFit, scoreCuratedLink } from "@/lib/scoring";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -63,53 +68,54 @@ export default async function CategoryPage({
     }),
   ]);
 
-  // Events are always hosted by Serena in this app's current single-host
-  // model, so they're pinned above scored links rather than competing on
-  // the rubric — see the April–July curation audit for the reasoning.
-  const hostedEvents = categoryEvents.map((event) => ({
+  const hostedItems = categoryEvents.map((event) => ({
     kind: "event" as const,
     id: event.id,
-    title: event.title,
-    subtitle: `${event.date.toLocaleDateString("en-US", {
+    href: `/events/${event.id}/apply`,
+    external: false,
+    image: null as string | null,
+    eyebrow: `${event.date.toLocaleDateString("en-US", {
       weekday: "long",
       month: "long",
       day: "numeric",
       timeZone: "America/New_York",
     })} · Hosted by NY IRL`,
+    title: event.title,
     description: event.description,
-    image: null as string | null,
-    href: `/events/${event.id}/apply`,
-    external: false,
+    tier: null as string | null,
+    reason: "",
     score:
       isProfileComplete && profile
         ? computeStructuralScore(profile, event.criteriaWeights, event.tags)
-        : null,
+        : 0,
   }));
 
-  const scoredLinks = categoryLinks
-    .map((link) => ({
-      kind: "link" as const,
-      id: link.id,
-      title: link.title || link.sourceUrl,
-      subtitle: "From around town",
-      description: link.description,
-      image: link.imageUrl,
-      href: trackedHref({
-        id: link.id,
-        kind: "link",
-        source: "category",
-      }),
-      external: true,
+  const linkItems = categoryLinks
+    .map((link) => {
       // With no complete profile this ranks by pure quality (CQS) — the sensible
       // default order before we know anything about the viewer.
-      score: scoreCuratedLink(isProfileComplete ? profile : null, link, {
+      const s = scoreCuratedLink(isProfileComplete ? profile : null, link, {
         profileEmbedding: profile?.embedding,
         linkEmbedding: link.embedding,
-      }).score,
-    }))
+      });
+      const { tier: fitTier, reason } = describeFit(link, s);
+      return {
+        kind: "link" as const,
+        id: link.id,
+        href: trackedHref({ id: link.id, kind: "link", source: "category" }),
+        external: true,
+        image: link.imageUrl,
+        eyebrow: "From around town",
+        title: link.title || link.sourceUrl,
+        description: link.description,
+        tier: isProfileComplete ? fitTier : "Curated",
+        reason,
+        score: s.score,
+      };
+    })
     .sort((a, b) => b.score - a.score);
 
-  const items = [...hostedEvents, ...scoredLinks];
+  const items = [...hostedItems, ...linkItems];
 
   if (items.length > 0 && !(await isPrefetchRequest())) {
     const userId = session?.user?.id ?? null;
@@ -122,65 +128,50 @@ export default async function CategoryPage({
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-12">
-      <Link
-        href="/"
-        className="mb-3 inline-block font-mono text-xs uppercase tracking-[0.14em] text-accent hover:text-accent-hover"
-      >
-        ← All categories
-      </Link>
-      <h1 className="font-serif text-3xl font-semibold tracking-tight mb-8">
-        {CATEGORY_LABELS[category]}
-      </h1>
-
-      <div className="flex flex-col gap-3">
-        {items.map((item) => (
-          <a
-            key={`${item.kind}-${item.id}`}
-            href={item.href}
-            target={item.external ? "_blank" : undefined}
-            rel={item.external ? "noopener noreferrer" : undefined}
-            className="flex items-start gap-4 rounded-lg border border-line bg-surface p-5 transition-colors hover:border-accent/40"
+    <PageShell>
+      <PageHeader
+        title={CATEGORY_LABELS[category]}
+        back={
+          <Link
+            href="/"
+            className="mb-3 inline-block font-mono text-xs uppercase tracking-[0.14em] text-accent hover:text-accent-hover"
           >
-            {item.image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={item.image}
-                alt=""
-                className="h-14 w-14 shrink-0 rounded-md object-cover"
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="font-mono text-xs uppercase tracking-[0.1em] text-accent mb-1">
-                {item.subtitle}
-              </p>
-              <h2 className="font-serif text-lg font-semibold text-foreground">
-                {item.title}
-              </h2>
-              {item.description && (
-                <p className="mt-1 truncate text-sm text-foreground-soft">
-                  {item.description}
-                </p>
-              )}
-            </div>
-            {item.score !== null && (
-              <div className="shrink-0 text-right">
-                <div className="font-mono text-lg font-semibold tabular-nums">
-                  {item.score}
-                </div>
-                <div className="text-[11px] uppercase tracking-wide text-foreground-soft/70">
-                  {isProfileComplete ? "fit" : "quality"}
-                </div>
-              </div>
-            )}
-          </a>
-        ))}
-        {items.length === 0 && (
-          <p className="text-sm text-foreground-soft">
-            Nothing in this category yet.
-          </p>
-        )}
-      </div>
-    </main>
+            ← All categories
+          </Link>
+        }
+      />
+
+      {items.length === 0 ? (
+        <EmptyState
+          eyebrow="Nothing upcoming"
+          title="No upcoming events in this category yet."
+          action={{ href: "/", label: "Back to Discover" }}
+        />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {items.map((item) => (
+            <ListingCard
+              key={`${item.kind}-${item.id}`}
+              href={item.href}
+              external={item.external}
+              image={item.image}
+              eyebrow={item.eyebrow}
+              title={item.title}
+              description={item.description}
+              chip={
+                item.kind === "link" && item.reason ? (
+                  <ReasonChip>{item.reason}</ReasonChip>
+                ) : undefined
+              }
+              aside={
+                item.kind === "link" && item.tier ? (
+                  <FitScore score={item.score} tier={item.tier} />
+                ) : undefined
+              }
+            />
+          ))}
+        </div>
+      )}
+    </PageShell>
   );
 }

@@ -477,3 +477,28 @@ export function scoreCuratedLink(
   const score = Math.round(Math.min(100, Math.max(0, base + boosts)));
   return { score, relevance, quality, boosts, usedEmbedding };
 }
+
+/**
+ * A short, honest explanation of why a link ranked where it did — a tier word
+ * for the score chip and a plain-language reason line for the card. Turns the
+ * bare number into "here's why you're seeing this" without over-claiming.
+ */
+export function describeFit(link: ScorableLink, s: LinkScore): { tier: string; reason: string } {
+  const tier =
+    s.score >= 85
+      ? "Strong fit"
+      : s.score >= 70
+        ? "Good fit"
+        : s.score >= 55
+          ? "Fair fit"
+          : "Worth a look";
+
+  const reasons: string[] = [];
+  if (isTierOneHost(`${link.title ?? ""} ${link.description ?? ""}`)) reasons.push("notable host");
+  if (link.exclusivity === "invite_only") reasons.push("invite-only");
+  else if (link.format === "dinner") reasons.push("intimate dinner");
+  if (s.relevance >= 65) reasons.push("matches your profile");
+  if (s.boosts > 0) reasons.push("matches your interests");
+
+  return { tier, reason: reasons.slice(0, 2).join(" · ") };
+}

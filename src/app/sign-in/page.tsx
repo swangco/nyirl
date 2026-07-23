@@ -17,7 +17,7 @@ export default async function SignInPage({
   const { next } = await searchParams;
   const redirectTo = safeNext(next);
   return (
-    <main className="flex min-h-[calc(100vh-64px)] flex-col items-center justify-center gap-8 px-6 text-center">
+    <main className="flex min-h-[60svh] flex-col items-center justify-center gap-8 px-6 py-16 text-center">
       <div className="flex flex-col gap-3">
         <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent">
           By invitation, by fit

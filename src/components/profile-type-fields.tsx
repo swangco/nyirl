@@ -48,18 +48,18 @@ export function ProfileTypeFields({
     <>
       <fieldset className="flex flex-col gap-2.5">
         <legend className={labelClass}>Profile type</legend>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
           {types.map((type) => (
             <label
               key={type}
-              className="flex items-center gap-2 text-sm text-foreground-soft has-checked:text-foreground"
+              className="flex min-h-10 items-center gap-2.5 text-sm text-foreground-soft has-checked:text-foreground"
             >
               <input
                 type="checkbox"
                 name="profileType"
                 value={type}
                 defaultChecked={defaultTypes.includes(type)}
-                className="accent-accent"
+                className="h-4 w-4 accent-accent"
                 onChange={(e) => {
                   setSelected((prev) => {
                     const next = new Set(prev);
@@ -76,7 +76,7 @@ export function ProfileTypeFields({
       </fieldset>
 
       {isFounder && (
-        <div className="grid grid-cols-2 gap-4 rounded-md border border-line bg-surface p-4">
+        <div className="grid grid-cols-1 gap-4 rounded-md border border-line bg-surface p-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
             <span className={labelClass}>Stage</span>
             <select name="stage" defaultValue={defaultStage ?? ""} className={inputClass}>

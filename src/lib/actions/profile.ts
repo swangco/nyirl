@@ -66,6 +66,10 @@ export async function saveProfile(formData: FormData) {
       (interestTagEnum as readonly string[]).includes(i),
     );
 
+  // The form's digest checkbox is positive ("Weekly digest" = subscribed);
+  // an unchecked box is absent from the payload, i.e. opted out.
+  const digestOptOut = formData.get("digestSubscribed") !== "on";
+
   if (!fullName) {
     throw new Error("Full name is required");
   }
@@ -144,6 +148,7 @@ export async function saveProfile(formData: FormData) {
     genderIdentity,
     ageRange,
     interests,
+    digestOptOut,
   };
 
   await db
