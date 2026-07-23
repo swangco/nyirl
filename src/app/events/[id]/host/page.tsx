@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { StatusPill } from "@/components/status-pill";
-import { updateRegistrationStatus } from "@/lib/actions/host";
+import { generateApplicantRationale, updateRegistrationStatus } from "@/lib/actions/host";
 
 const decideButton = "rounded-full px-4 py-2 text-sm font-medium transition-colors";
 
@@ -113,7 +113,7 @@ export default async function HostDashboardPage({
                       {reg.compositeScore}
                     </div>
                     <div className="font-mono text-xs tabular-nums text-foreground-soft/70">
-                      struct {reg.structuralScore} · ai {reg.semanticScore}
+                      struct {reg.structuralScore} · match {reg.semanticScore}
                     </div>
                   </div>
                 </div>
@@ -121,8 +121,14 @@ export default async function HostDashboardPage({
                 {profile?.bioBlurb && (
                   <p className="mt-3 text-sm text-foreground">{profile.bioBlurb}</p>
                 )}
-                {reg.aiRationale && (
+                {reg.aiRationale ? (
                   <p className="mt-2 text-xs italic text-foreground-soft">{reg.aiRationale}</p>
+                ) : (
+                  <form action={generateApplicantRationale.bind(null, id, reg.id)} className="mt-2">
+                    <button className="text-xs text-accent underline underline-offset-2 hover:text-accent-hover">
+                      + Add AI read
+                    </button>
+                  </form>
                 )}
 
                 <div className="mt-4 flex flex-wrap gap-2">

@@ -212,6 +212,24 @@ export function computeCompositeScore(structural: number, semantic: number): num
   return Math.round(0.6 * structural + 0.4 * semantic);
 }
 
+/**
+ * Applicant relevance from precomputed embeddings — the no-LLM replacement for
+ * the per-application Haiku screen. cosine(profile, event) mapped to 0-100 with
+ * the same calibration discovery uses. Returns null when either embedding is
+ * absent (no OPENAI_API_KEY / un-embedded row) so the caller can fall back to a
+ * neutral score. This keeps applicant scoring off the request-path LLM entirely;
+ * the host generates a qualitative AI read on demand instead (see host actions).
+ */
+export function applicantSemanticScore(
+  profileEmbedding: number[] | null,
+  eventEmbedding: number[] | null,
+): number | null {
+  if (profileEmbedding && eventEmbedding && profileEmbedding.length === eventEmbedding.length) {
+    return semanticRelevance(cosineSimilarity(profileEmbedding, eventEmbedding));
+  }
+  return null;
+}
+
 // ============================================================
 // Discovery / digest scoring
 // ------------------------------------------------------------

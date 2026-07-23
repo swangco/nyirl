@@ -7,8 +7,8 @@ import { db } from "@/db";
 import { events, profiles, registrations } from "@/db/schema";
 import { logInteraction } from "@/lib/interactions";
 import {
+  applicantSemanticScore,
   computeCompositeScore,
-  computeSemanticScore,
   computeStructuralScore,
 } from "@/lib/scoring";
 
@@ -44,16 +44,12 @@ export async function applyToEvent(eventId: string) {
   }
 
   const structuralScore = computeStructuralScore(profile, event.criteriaWeights, event.tags);
-  const semantic = await computeSemanticScore({
-    idealAttendeeBrief: event.idealAttendeeBrief,
-    resumeText: profile.resumeTextExtracted,
-    bioBlurb: profile.bioBlurb,
-    title: profile.title,
-    company: profile.company,
-  });
-  // The model can return a fractional relevance_score; the column is an integer,
-  // so round before insert (an unrounded value fails the whole application).
-  const semanticScore = Math.round(semantic.relevance_score);
+  // Semantic relevance now comes from the precomputed embeddings (cosine of the
+  // applicant's profile vector against the event's), not a per-application LLM
+  // call. Falls back to a neutral 50 when embeddings aren't populated yet — the
+  // same as the prior no-key behavior — and the host can request a qualitative
+  // AI read per applicant on the dashboard.
+  const semanticScore = applicantSemanticScore(profile.embedding, event.embedding) ?? 50;
   const compositeScore = computeCompositeScore(structuralScore, semanticScore);
 
   // onConflictDoNothing makes a concurrent double-submit a no-op instead of a
@@ -69,7 +65,8 @@ export async function applyToEvent(eventId: string) {
       status: "pending",
       structuralScore,
       semanticScore,
-      aiRationale: semantic.rationale,
+      // Filled in lazily by the host via generateApplicantRationale — no LLM at apply time.
+      aiRationale: null,
       compositeScore,
     })
     .onConflictDoNothing()
