@@ -9,7 +9,10 @@ import {
   computeLinkFitScore,
   computeStructuralScore,
 } from "@/lib/scoring";
-import { ScoreBadge } from "@/components/score-badge";
+import {
+  RecommendationCard,
+  type RecommendationItem,
+} from "@/components/recommendation-card";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -84,23 +87,23 @@ export default async function Home() {
   // Events are always hosted by Serena in this app's current single-host
   // model — they're her own track record, not third-party curation, so
   // they're pinned above scored links rather than competing on the rubric.
-  const hostedEvents = allEvents.map((event) => ({
-    kind: "event" as const,
+  const hostedEvents: RecommendationItem[] = allEvents.map((event) => ({
+    kind: "event",
     id: event.id,
     title: event.title,
-    subtitle: `${event.date.toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "long",
+    meta: event.date.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
       day: "numeric",
-    })} · Hosted by NY IRL`,
+    }),
     description: event.description,
-    image: null as string | null,
+    image: null,
     href: `/events/${event.id}/apply`,
     external: false,
     score: isProfileComplete ? computeStructuralScore(profile!, event.criteriaWeights, event.tags) : null,
   }));
 
-  const scoredLinks = isProfileComplete
+  const scoredLinks: RecommendationItem[] = isProfileComplete
     ? links
         .map((link) => {
           const fit = computeLinkFitScore(profile!, link);
@@ -109,7 +112,7 @@ export default async function Home() {
             kind: "link" as const,
             id: link.id,
             title: link.title || link.sourceUrl,
-            subtitle: "From around town",
+            meta: "From around town",
             description: link.description,
             image: link.imageUrl,
             href: link.sourceUrl,
@@ -117,7 +120,7 @@ export default async function Home() {
             score: computeBlendedLinkScore(fit, cqs),
           };
         })
-        .sort((a, b) => b.score - a.score)
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     : [];
 
   const recommendations = isProfileComplete ? [...hostedEvents, ...scoredLinks] : [];
@@ -201,36 +204,11 @@ export default async function Home() {
           </p>
           <div className="flex flex-col gap-2.5">
             {recommendations.map((item) => (
-              <a
+              <RecommendationCard
                 key={`${item.kind}-${item.id}`}
-                href={item.href}
-                target={item.external ? "_blank" : undefined}
-                rel={item.external ? "noopener noreferrer" : undefined}
-                className="group flex items-center gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-foreground/25"
-              >
-                {item.image && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={item.image}
-                    alt=""
-                    className="h-14 w-14 shrink-0 rounded-md object-cover"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-foreground-soft">
-                    {item.subtitle}
-                  </p>
-                  <h2 className="truncate text-base font-semibold tracking-tight text-foreground">
-                    {item.title}
-                  </h2>
-                  {item.description && (
-                    <p className="mt-0.5 truncate text-sm text-foreground-soft">
-                      {item.description}
-                    </p>
-                  )}
-                </div>
-                {item.score !== null && <ScoreBadge score={item.score} label="fit" />}
-              </a>
+                item={item}
+                scoreLabel="fit"
+              />
             ))}
             {recommendations.length === 0 && (
               <p className="text-sm text-foreground-soft">

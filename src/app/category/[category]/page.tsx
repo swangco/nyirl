@@ -10,7 +10,10 @@ import {
   computeLinkFitScore,
   computeStructuralScore,
 } from "@/lib/scoring";
-import { ScoreBadge } from "@/components/score-badge";
+import {
+  RecommendationCard,
+  type RecommendationItem,
+} from "@/components/recommendation-card";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -69,17 +72,17 @@ export default async function CategoryPage({
   // Events are always hosted by Serena in this app's current single-host
   // model, so they're pinned above scored links rather than competing on
   // the rubric — see the April–July curation audit for the reasoning.
-  const hostedEvents = categoryEvents.map((event) => ({
-    kind: "event" as const,
+  const hostedEvents: RecommendationItem[] = categoryEvents.map((event) => ({
+    kind: "event",
     id: event.id,
     title: event.title,
-    subtitle: `${event.date.toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "long",
+    meta: event.date.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
       day: "numeric",
-    })} · Hosted by NY IRL`,
+    }),
     description: event.description,
-    image: null as string | null,
+    image: null,
     href: `/events/${event.id}/apply`,
     external: false,
     score:
@@ -88,7 +91,7 @@ export default async function CategoryPage({
         : null,
   }));
 
-  const scoredLinks = categoryLinks
+  const scoredLinks: RecommendationItem[] = categoryLinks
     .map((link) => {
       const cqs = computeCurationQualityScore(link);
       const score =
@@ -99,7 +102,7 @@ export default async function CategoryPage({
         kind: "link" as const,
         id: link.id,
         title: link.title || link.sourceUrl,
-        subtitle: "From around town",
+        meta: "From around town",
         description: link.description,
         image: link.imageUrl,
         href: link.sourceUrl,
@@ -107,7 +110,7 @@ export default async function CategoryPage({
         score,
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
   const items = [...hostedEvents, ...scoredLinks];
 
@@ -125,41 +128,11 @@ export default async function CategoryPage({
 
       <div className="flex flex-col gap-2.5">
         {items.map((item) => (
-          <a
+          <RecommendationCard
             key={`${item.kind}-${item.id}`}
-            href={item.href}
-            target={item.external ? "_blank" : undefined}
-            rel={item.external ? "noopener noreferrer" : undefined}
-            className="group flex items-center gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-foreground/25"
-          >
-            {item.image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={item.image}
-                alt=""
-                className="h-14 w-14 shrink-0 rounded-md object-cover"
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="mb-1 font-mono text-[11px] uppercase tracking-[0.12em] text-foreground-soft">
-                {item.subtitle}
-              </p>
-              <h2 className="truncate text-base font-semibold tracking-tight text-foreground">
-                {item.title}
-              </h2>
-              {item.description && (
-                <p className="mt-0.5 truncate text-sm text-foreground-soft">
-                  {item.description}
-                </p>
-              )}
-            </div>
-            {item.score !== null && (
-              <ScoreBadge
-                score={item.score}
-                label={isProfileComplete ? "fit" : "quality"}
-              />
-            )}
-          </a>
+            item={item}
+            scoreLabel={isProfileComplete ? "fit" : "quality"}
+          />
         ))}
         {items.length === 0 && (
           <p className="text-sm text-foreground-soft">

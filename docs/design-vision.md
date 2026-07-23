@@ -42,5 +42,5 @@ That's a meaningfully specific positioning. It's not "Partiful for NYC" (social-
 ## Open questions (still to resolve)
 
 - What does "onboarding a user" concretely look like — direct outreach, a signup push at an event, something else?
-- Once the visual pass happens, does the Recommended-for-you card layout need to change shape too, or just its type/color treatment?
+- ~~Once the visual pass happens, does the Recommended-for-you card layout need to change shape too, or just its type/color treatment?~~ **Resolved (2026-07-23):** shape did change. Cards now distinguish the two item types at a glance — hosted NY IRL events carry a solid "NY IRL" pill (pinned track record), external picks show a "Curated link" out-arrow label — with a thumbnail/placeholder, tightened metadata row, and the fit/quality score kept prominent on the right. Shared `RecommendationCard` component drives both the homepage and category lists.
 - At what subscriber count does the digest become worth turning on for real?
