@@ -1,6 +1,7 @@
 import { asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import {
@@ -14,7 +15,13 @@ import {
   profileTypeEnum,
 } from "@/db/schema";
 import { saveProfile } from "@/lib/actions/profile";
-import { computeLinkFitScore, computeStructuralScore } from "@/lib/scoring";
+import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
+import { trackedHref } from "@/lib/links";
+import { computeStructuralScore, describeFit, scoreCuratedLink } from "@/lib/scoring";
+import { EmptyState } from "@/components/empty-state";
+import { FitScore, ReasonChip } from "@/components/fit-score";
+import { ListingCard } from "@/components/listing-card";
+import { PageShell } from "@/components/page-shell";
 import { ProfileTypeFields } from "@/components/profile-type-fields";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
@@ -78,34 +85,74 @@ export default async function ProfilePage({
     db.query.curatedLinks.findMany({ orderBy: [desc(curatedLinks.createdAt)] }),
   ]);
 
-  const recommendations = profile
+  // Only recommend what's still upcoming (this page previously ranked past
+  // events too), and score links with the same scoreCuratedLink the homepage
+  // uses so the numbers here can't diverge from what Discover shows. Gated on
+  // profile completeness, same as the homepage and digest, so the three
+  // surfaces agree on when a user is scorable.
+  const isProfileComplete =
+    !!profile?.fullName &&
+    (profile.profileType?.length ?? 0) > 0 &&
+    !!profile.bioBlurb?.trim();
+  const now = new Date();
+  const recommendations = profile && isProfileComplete
     ? [
-        ...allEvents.map((event) => ({
-          kind: "event" as const,
-          id: event.id,
-          title: event.title,
-          subtitle: `${event.date.toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-          })}${event.host?.profile?.fullName ? ` · ${event.host.profile.fullName}` : ""}`,
-          href: `/events/${event.id}/apply`,
-          score: computeStructuralScore(profile, event.criteriaWeights, event.tags),
-        })),
-        ...allLinks.map((link) => ({
-          kind: "link" as const,
-          id: link.id,
-          title: link.title || link.sourceUrl,
-          subtitle: "From around town",
-          href: link.sourceUrl,
-          score: computeLinkFitScore(profile, link),
-        })),
+        ...allEvents
+          .filter((event) => event.date >= now)
+          .map((event) => ({
+            kind: "event" as const,
+            id: event.id,
+            title: event.title,
+            eyebrow: `${event.date.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              timeZone: "America/New_York",
+            })}${event.host?.profile?.fullName ? ` · ${event.host.profile.fullName}` : ""}`,
+            href: `/events/${event.id}/apply`,
+            external: false,
+            image: null as string | null,
+            tier: null as string | null,
+            reason: "",
+            score: computeStructuralScore(profile, event.criteriaWeights, event.tags),
+          })),
+        ...allLinks
+          .filter((link) => link.eventDate && link.eventDate >= now)
+          .map((link) => {
+            const s = scoreCuratedLink(profile, link, {
+              profileEmbedding: profile.embedding,
+              linkEmbedding: link.embedding,
+            });
+            const { tier, reason } = describeFit(link, s);
+            return {
+              kind: "link" as const,
+              id: link.id,
+              title: link.title || link.sourceUrl,
+              eyebrow: "From around town",
+              href: trackedHref({ id: link.id, kind: "link", source: "profile" }),
+              external: true,
+              image: link.imageUrl as string | null,
+              tier: tier as string | null,
+              reason,
+              score: s.score,
+            };
+          }),
       ]
         .sort((a, b) => b.score - a.score)
         .slice(0, 5)
     : [];
 
+  if (profile && recommendations.length > 0 && !(await isPrefetchRequest())) {
+    const userId = profile.userId;
+    after(() =>
+      logImpressions(
+        recommendations.map((r) => ({ kind: r.kind, id: r.id, score: r.score })),
+        { userId, source: "profile" },
+      ),
+    );
+  }
+
   return (
-    <main className="mx-auto max-w-xl px-6 py-12">
+    <PageShell width="narrow">
       {saved && (
         <div className="mb-6 rounded-md border border-line bg-surface px-4 py-2.5 text-sm text-foreground">
           Profile saved.
@@ -162,6 +209,21 @@ export default async function ProfilePage({
           </span>
         </label>
 
+        <label className="flex items-start justify-between gap-4 rounded-md border border-line bg-surface px-4 py-3">
+          <span className="flex flex-col gap-0.5">
+            <span className={labelClass}>Weekly digest</span>
+            <span className="text-xs text-foreground-soft">
+              A selective Monday email — only when something genuinely clears the bar.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            name="digestSubscribed"
+            defaultChecked={!profile?.digestOptOut}
+            className="mt-1 h-4 w-4 shrink-0 accent-accent"
+          />
+        </label>
+
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>LinkedIn URL</span>
           <input
@@ -173,7 +235,7 @@ export default async function ProfilePage({
           />
         </label>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
             <span className={labelClass}>Company</span>
             <input
@@ -208,7 +270,7 @@ export default async function ProfilePage({
             events end up ranked highest for you.
           </p>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className={labelClass}>Gender</span>
               <select
@@ -249,14 +311,14 @@ export default async function ProfilePage({
               {interestTagEnum.map((interest) => (
                 <label
                   key={interest}
-                  className="flex items-center gap-2 text-sm text-foreground-soft has-checked:text-foreground"
+                  className="flex min-h-10 items-center gap-2.5 text-sm text-foreground-soft has-checked:text-foreground"
                 >
                   <input
                     type="checkbox"
                     name="interests"
                     value={interest}
                     defaultChecked={profile?.interests?.includes(interest) ?? false}
-                    className="accent-accent"
+                    className="h-4 w-4 accent-accent"
                   />
                   {INTEREST_LABELS[interest]}
                 </label>
@@ -305,43 +367,45 @@ export default async function ProfilePage({
 
       {profile && (
         <div className="mt-14 border-t border-line pt-10">
-          <p className="font-mono text-xs uppercase tracking-[0.14em] text-accent mb-3">
+          <p className="mb-3 font-mono text-xs uppercase tracking-[0.14em] text-accent">
             Recommended for you
           </p>
-          <p className="text-sm text-foreground-soft mb-6">
+          <p className="mb-6 text-sm text-foreground-soft">
             Ranked by fit against the profile above.
           </p>
-          <div className="flex flex-col gap-3">
-            {recommendations.map((item) => (
-              <a
-                key={`${item.kind}-${item.id}`}
-                href={item.href}
-                target={item.kind === "link" ? "_blank" : undefined}
-                rel={item.kind === "link" ? "noopener noreferrer" : undefined}
-                className="flex items-start justify-between gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-accent/40"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium text-foreground">{item.title}</p>
-                  <p className="mt-0.5 text-sm text-foreground-soft">
-                    {item.subtitle}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-mono text-lg font-semibold tabular-nums">
-                    {item.score}
-                  </div>
-                  <div className="text-[11px] uppercase tracking-wide text-foreground-soft/70">
-                    fit
-                  </div>
-                </div>
-              </a>
-            ))}
-            {recommendations.length === 0 && (
-              <p className="text-sm text-foreground-soft">
-                Nothing to recommend yet.
-              </p>
-            )}
-          </div>
+          {recommendations.length === 0 ? (
+            <EmptyState
+              eyebrow={isProfileComplete ? "Nothing upcoming" : "Almost there"}
+              title={
+                isProfileComplete
+                  ? "No upcoming events match yet — new rooms get curated weekly."
+                  : "Add your role and a short bio above to start seeing matches."
+              }
+            />
+          ) : (
+            <div className="flex flex-col gap-3">
+              {recommendations.map((item) => (
+                <ListingCard
+                  key={`${item.kind}-${item.id}`}
+                  href={item.href}
+                  external={item.external}
+                  image={item.image}
+                  eyebrow={item.eyebrow}
+                  title={item.title}
+                  chip={
+                    item.kind === "link" && item.reason ? (
+                      <ReasonChip>{item.reason}</ReasonChip>
+                    ) : undefined
+                  }
+                  aside={
+                    item.kind === "link" && item.tier ? (
+                      <FitScore score={item.score} tier={item.tier} />
+                    ) : undefined
+                  }
+                />
+              ))}
+            </div>
+          )}
 
           {isHost && (
             <Link
@@ -354,6 +418,6 @@ export default async function ProfilePage({
           )}
         </div>
       )}
-    </main>
+    </PageShell>
   );
 }

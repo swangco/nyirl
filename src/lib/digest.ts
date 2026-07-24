@@ -1,15 +1,19 @@
 import type { curatedLinks, events, profiles } from "@/db/schema";
-import {
-  computeBlendedLinkScore,
-  computeCurationQualityScore,
-  computeLinkFitScore,
-  computeStructuralScore,
-} from "@/lib/scoring";
+import { trackedHref } from "@/lib/links";
+import { computeStructuralScore, scoreCuratedLink } from "@/lib/scoring";
 
 /** Deliberately high — "better to skip a week than send a weak pick"
  * (Serena, 2026-07-22). Only curated links are gated on this; Serena's own
- * hosted events always make the cut, same as the homepage pin behavior. */
+ * hosted events always make the cut. Under the redesigned blend
+ * (0.6·relevance + 0.4·quality + boosts) an item clears the bar only when it is
+ * BOTH a strong match and a high-quality room: a link from an unrecognized host
+ * (CQS ≈ 33) can't reach 80 on match alone, whereas a tier-1/exclusive room
+ * with a good match does. That keeps the digest selective by design — this is
+ * the main knob to tune once there's real send/click data. */
 export const DIGEST_QUALITY_THRESHOLD = 80;
+
+/** Where digest links point when a caller doesn't pass its own origin. */
+const DEFAULT_APP_URL = "https://nyirl.vercel.app";
 
 type Profile = typeof profiles.$inferSelect;
 type Event = typeof events.$inferSelect;
@@ -33,15 +37,19 @@ const isProfileComplete = (profile: Profile) =>
 /**
  * Builds this week's digest for one profile: Serena's own upcoming events
  * (always included, unscored, mirroring the homepage pin) plus curated
- * links whose blended fit+quality score clears DIGEST_QUALITY_THRESHOLD.
+ * links whose blended relevance+quality score clears DIGEST_QUALITY_THRESHOLD.
  * `alreadySent` excludes anything already emailed to this person before —
  * an item is only ever sent once, however many weeks it stays upcoming.
+ * Link scoring uses the same scoreCuratedLink as every on-site surface, so the
+ * digest can't diverge from what the site shows. Links route through /api/out
+ * for click attribution (source=digest).
  */
 export function buildDigestItems(
   profile: Profile,
   upcomingEvents: Event[],
   upcomingLinks: CuratedLink[],
   alreadySent: Set<string>,
+  appUrl: string = DEFAULT_APP_URL,
 ): DigestItem[] {
   if (!isProfileComplete(profile)) return [];
 
@@ -53,7 +61,13 @@ export function buildDigestItems(
       title: e.title,
       description: e.description,
       date: e.date,
-      href: `https://nyirl.vercel.app/events/${e.id}/apply`,
+      href: trackedHref({
+        id: e.id,
+        kind: "event",
+        source: "digest",
+        uid: profile.userId,
+        base: appUrl,
+      }),
       score: computeStructuralScore(profile, e.criteriaWeights, e.tags),
     }));
 
@@ -65,12 +79,32 @@ export function buildDigestItems(
       title: l.title || l.sourceUrl,
       description: l.description,
       date: l.eventDate!,
-      href: l.sourceUrl,
-      score: computeBlendedLinkScore(computeLinkFitScore(profile, l), computeCurationQualityScore(l)),
+      href: trackedHref({
+        id: l.id,
+        kind: "link",
+        source: "digest",
+        uid: profile.userId,
+        base: appUrl,
+      }),
+      score: scoreCuratedLink(profile, l, {
+        profileEmbedding: profile.embedding,
+        linkEmbedding: l.embedding,
+      }).score,
     }))
     .filter((item) => item.score >= DIGEST_QUALITY_THRESHOLD);
 
   return [...eventItems, ...linkItems].sort((a, b) => b.score - a.score);
+}
+
+/** Escapes text interpolated into the digest HTML — titles/descriptions are
+ * scraped from third-party pages, so they can't go into markup raw. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 export function renderDigestEmail(fullName: string, items: DigestItem[], unsubscribeUrl: string): string {
@@ -80,12 +114,12 @@ export function renderDigestEmail(fullName: string, items: DigestItem[], unsubsc
         <tr>
           <td style="padding:16px 0;border-bottom:1px solid #ddd2bc;">
             <p style="margin:0 0 4px;font-family:ui-monospace,monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8a6a3b;">
-              ${item.date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}${item.kind === "event" ? " · Hosted by NY IRL" : ""}
+              ${item.date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "America/New_York" })}${item.kind === "event" ? " · Hosted by NY IRL" : ""}
             </p>
             <p style="margin:0 0 4px;font-size:16px;font-weight:600;color:#211d19;">
-              <a href="${item.href}" style="color:#211d19;text-decoration:none;">${item.title}</a>
+              <a href="${escapeHtml(item.href)}" style="color:#211d19;text-decoration:none;">${escapeHtml(item.title)}</a>
             </p>
-            ${item.description ? `<p style="margin:0;font-size:14px;color:#756c5c;">${item.description}</p>` : ""}
+            ${item.description ? `<p style="margin:0;font-size:14px;color:#756c5c;">${escapeHtml(item.description)}</p>` : ""}
           </td>
         </tr>`,
     )
@@ -94,10 +128,10 @@ export function renderDigestEmail(fullName: string, items: DigestItem[], unsubsc
   return `
     <div style="max-width:560px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;">
       <p style="font-family:ui-monospace,monospace;font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:#8a6a3b;">This week at NY IRL</p>
-      <p style="font-size:16px;color:#211d19;">Hi ${fullName.split(" ")[0]}, here's what cleared the bar this week:</p>
+      <p style="font-size:16px;color:#211d19;">Hi ${escapeHtml(fullName.split(" ")[0])}, here's what cleared the bar this week:</p>
       <table style="width:100%;border-collapse:collapse;">${rows}</table>
       <p style="margin-top:32px;font-size:12px;color:#8a8578;">
-        <a href="${unsubscribeUrl}" style="color:#8a8578;">Unsubscribe from this weekly email</a>
+        <a href="${escapeHtml(unsubscribeUrl)}" style="color:#8a8578;">Unsubscribe from this weekly email</a>
       </p>
     </div>`;
 }

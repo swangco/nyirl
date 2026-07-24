@@ -8,6 +8,7 @@ import type {
   profiles,
   profileTypeEnum,
 } from "@/db/schema";
+import { cosineSimilarity } from "@/lib/embeddings";
 
 type Profile = typeof profiles.$inferSelect;
 
@@ -211,17 +212,53 @@ export function computeCompositeScore(structural: number, semantic: number): num
   return Math.round(0.6 * structural + 0.4 * semantic);
 }
 
+/**
+ * Applicant relevance from precomputed embeddings — the no-LLM replacement for
+ * the per-application Haiku screen. cosine(profile, event) mapped to 0-100 with
+ * the same calibration discovery uses. Returns null when either embedding is
+ * absent (no OPENAI_API_KEY / un-embedded row) so the caller can fall back to a
+ * neutral score. This keeps applicant scoring off the request-path LLM entirely;
+ * the host generates a qualitative AI read on demand instead (see host actions).
+ */
+export function applicantSemanticScore(
+  profileEmbedding: number[] | null,
+  eventEmbedding: number[] | null,
+): number | null {
+  if (profileEmbedding && eventEmbedding && profileEmbedding.length === eventEmbedding.length) {
+    return semanticRelevance(cosineSimilarity(profileEmbedding, eventEmbedding));
+  }
+  return null;
+}
+
+// ============================================================
+// Discovery / digest scoring
+// ------------------------------------------------------------
+// Ranks curated links (and hosted events, in the digest) for a viewer. A rank
+// decomposes into three orthogonal parts, blended by scoreCuratedLink:
+//   relevance — does this match THIS viewer?   (semantic vector, else keyword fit)
+//   quality   — is this a good listing at all?  (Curation Quality Score)
+//   boosts    — explicit, additive, rule-based nudges (interests, gender)
+// Vector cosine is a far better relevance signal than keyword overlap, so it is
+// the primary relevance when embeddings exist; it says nothing about quality,
+// which is why the CQS quality prior stays and is applied alongside it.
+// See docs/superpowers/specs/2026-07-22-scoring-and-recsys-design.md.
+// ============================================================
+
+/** Relevance vs. quality blend — the same 60/40 split the registrant scorer uses. */
+const RELEVANCE_WEIGHT = 0.6;
+const QUALITY_WEIGHT = 0.4;
+
 const PROFILE_TYPE_KEYWORDS: Record<(typeof profileTypeEnum)[number], string[]> = {
   founder: [
     "founder", "founders", "startup", "startups", "ceo", "entrepreneur",
-    "venture", "vc", "demo day", "pitch", "builders", "tech", "network",
+    "venture", "demo", "pitch", "builders", "tech", "network",
     "networking", "mixer", "community", "industry",
   ],
-  operator: ["operator", "operators", "ops", "growth", "gtm", "go-to-market"],
-  investor: ["investor", "investors", "vc", "venture", "fund", "capital", "angel"],
+  operator: ["operator", "operators", "ops", "growth", "gtm"],
+  investor: ["investor", "investors", "venture", "fund", "capital", "angel"],
   engineer: [
     "engineer", "engineers", "developer", "technical", "hackathon", "build",
-    "ai", "code", "hardware", "demo",
+    "code", "hardware", "demo",
   ],
   marketing_gtm: ["marketing", "growth", "gtm", "brand", "content"],
   job_seeking: ["hiring", "job", "career", "recruiting", "talent"],
@@ -235,66 +272,36 @@ const PROFILE_TYPE_KEYWORDS: Record<(typeof profileTypeEnum)[number], string[]> 
  * curation audit). Deliberately a growable allowlist: a host NOT on this
  * list gets no penalty, only no boost — guessing at reputation for an
  * unrecognized name is worse than an incomplete list.
+ *
+ * Entries are lowercase whitespace-normalized phrases and are matched on word
+ * boundaries (see isTierOneHost), so short names like "yc" or "aws" match only
+ * as whole tokens — never as a substring inside another word. Multi-word
+ * phrases like "first round" match as an adjacent token run.
+ *
+ * TODO(stage-2): move this to a hosts table so edits don't require a deploy.
  */
 const TIER_ONE_HOSTS = [
-  "union square",
-  "primary",
-  "mark gamma",
-  "tekakon",
-  "sierra",
-  "anthropic",
-  "openai",
-  "granola",
-  "notion",
-  "brazel",
-  "andrew young",
-  "andru yeung",
-  "andrew yeung",
-  "yonas",
-  "the collective",
-  "versi",
+  "union square", "primary", "mark gamma", "tekakon", "sierra", "anthropic",
+  "openai", "granola", "notion", "brazel", "andrew young", "andru yeung",
+  "andrew yeung", "yonas", "the collective", "versi",
   // Added from the April–July curation audit:
-  "replit",
-  "revenuecat",
-  "y combinator",
-  " yc ",
-  "nvidia",
-  "antler",
-  "vercel",
-  "stripe",
-  "elevenlabs",
-  "databricks",
-  "mercury",
-  "first round",
-  "m13",
-  "mongodb",
-  "shopify",
-  "cursor",
-  "ramp",
-  "spc",
-  "modal",
-  "datadog",
-  "google deepmind",
-  "microsoft",
-  "aws",
-  "tiktok",
-  "brex",
-  "firstmark",
-  "gamma",
-  "speedrun",
-  "hubspot",
-  "suno",
-  "flybridge",
-  "xai",
-  "runway",
-  "columbia university",
-  "bergdorf goodman",
-  "lvmh",
-];
+  "replit", "revenuecat", "y combinator", "yc", "nvidia", "antler", "vercel",
+  "stripe", "elevenlabs", "databricks", "mercury", "first round", "m13",
+  "mongodb", "shopify", "cursor", "ramp", "spc", "modal", "datadog",
+  "google deepmind", "microsoft", "aws", "tiktok", "brex", "firstmark",
+  "gamma", "speedrun", "hubspot", "suno", "flybridge", "xai", "runway",
+  "columbia university", "bergdorf goodman", "lvmh",
+].map((h) => h.trim().toLowerCase().replace(/\s+/g, " "));
 
-/** True if the given preview text mentions a recognized tier-1 host. */
+/**
+ * True if the preview text mentions a recognized tier-1 host. Normalizes the
+ * text to space-delimited tokens and matches each host phrase as a whole-token
+ * run — so "aws" won't hit inside "flaws", "yc" won't hit inside "cycling",
+ * and a leading "YC ..." title still matches.
+ */
 function isTierOneHost(text: string): boolean {
-  return TIER_ONE_HOSTS.some((host) => text.toLowerCase().includes(host));
+  const haystack = ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+  return TIER_ONE_HOSTS.some((host) => host.length > 0 && haystack.includes(` ${host} `));
 }
 
 /** Extracts an attendee count from scraped preview text, if present (e.g. Luma's "N attending"). */
@@ -303,99 +310,213 @@ function extractAttendeeCount(text: string): number | null {
   return match ? parseInt(match[1], 10) : null;
 }
 
-/**
- * Lightweight, no-AI-call fit score for a curated (external) link against a
- * profile — keyword overlap between profile type / bio and the link's own
- * title + description, plus Serena's discovery signals (tier-1 host,
- * smaller/more-private events score higher). Deliberately cheap so it can
- * run per-link on every page render without an LLM call in the critical
- * path. Lower-fidelity than event applicant scoring by design — there's no
- * resume, no brief, no host-defined rubric, just scraped preview text.
- */
-export function computeLinkFitScore(
-  profile: Pick<Profile, "profileType" | "bioBlurb" | "genderIdentity" | "interests"> | null,
-  link: { title: string | null; description: string | null; tags?: string[] | null },
-): number {
-  const text = `${link.title ?? ""} ${link.description ?? ""}`.toLowerCase();
+// ---- Quality prior (Curation Quality Score) ----------------
+// Item-intrinsic, viewer-independent. Sums to a 0-100 range.
 
-  let base = 50;
-  if (profile?.profileType?.length) {
-    let keywordHits = 0;
-    let keywordTotal = 0;
-    for (const type of profile.profileType) {
-      const keywords = PROFILE_TYPE_KEYWORDS[type] ?? [];
-      keywordTotal += keywords.length;
-      keywordHits += keywords.filter((kw) => text.includes(kw)).length;
-    }
-    const typeScore = keywordTotal > 0 ? (keywordHits / keywordTotal) * 100 : 50;
-
-    const bioWords = (profile.bioBlurb ?? "")
-      .toLowerCase()
-      .split(/\W+/)
-      .filter((w) => w.length > 4);
-    const bioHits = bioWords.filter((w) => text.includes(w)).length;
-    const bioBoost = Math.min(bioHits * 5, 20);
-
-    base = typeScore * 0.8 + bioBoost;
-  }
-
-  const hostBoost = isTierOneHost(text) ? 15 : 0;
-
-  const attendeeCount = extractAttendeeCount(text);
-  let sizeAdjustment = 0;
-  if (attendeeCount !== null) {
-    if (attendeeCount <= 50) sizeAdjustment = 10;
-    else if (attendeeCount >= 150) sizeAdjustment = -15;
-  }
-
-  const tags = link.tags ?? [];
-  const interestHits = (profile?.interests ?? []).filter((i) => tags.includes(i)).length;
-  const interestBoost = Math.min(interestHits * 10, 20);
-
-  const orientationTag = profile?.genderIdentity
-    ? GENDER_ORIENTATION_TAGS[profile.genderIdentity]
-    : undefined;
-  const genderBoost = orientationTag && tags.includes(orientationTag) ? 15 : 0;
-
-  return Math.round(
-    Math.min(100, Math.max(0, base + hostBoost + sizeAdjustment + interestBoost + genderBoost)),
-  );
-}
-
-const HOST_TIER_POINTS = { unknown: 0, tier_1: 40 };
+const HOST_TIER_POINTS = { unknown: 0, tier_1: 35 };
 const EXCLUSIVITY_POINTS = { open: 5, capped: 15, invite_only: 25 };
-const FORMAT_POINTS = {
-  expo: 5,
-  mixer: 10,
-  workshop: 15,
-  hackathon: 15,
-  dinner: 20,
-};
-const LOCALITY_POINTS = { out_of_town: 0, nyc: 15 };
+const FORMAT_POINTS = { expo: 5, mixer: 10, workshop: 12, hackathon: 12, dinner: 15 };
+const LOCALITY_POINTS = { out_of_town: 0, nyc: 10 };
+// Intimacy: smaller, more private rooms are the curation signal. Unknown size
+// is treated as mid — most curated listings don't publish a headcount.
+const INTIMACY_POINTS = { small: 15, medium: 8, large: 0, unknown: 8 };
+// max = 35 + 25 + 15 + 10 + 15 = 100
 
 type CuratedLink = typeof curatedLinks.$inferSelect;
 
 /**
  * Deterministic 0-100 "how good is this listing" score for a curated link,
- * independent of any one visitor's profile — the April–July curation audit
- * (playbooks/event-registrant-scoring.md) found host prestige, exclusivity,
- * format, and locality already implicitly drove which links got curated at
- * all. This makes that judgment explicit so it can order a category tile
- * before a visitor has a profile, and blend with personal fit once they do.
+ * independent of any one visitor's profile. This is the quality prior that
+ * semantic search cannot provide — cosine similarity ranks by match, not by
+ * whether the event is worth going to. Host prestige, exclusivity, format,
+ * NYC locality, and intimacy (smaller = more curated) all feed it.
  */
 export function computeCurationQualityScore(
   link: Pick<CuratedLink, "title" | "description" | "exclusivity" | "format" | "outOfTown">,
 ): number {
   const text = `${link.title ?? ""} ${link.description ?? ""}`;
-  const hostPoints = isTierOneHost(text) ? HOST_TIER_POINTS.tier_1 : HOST_TIER_POINTS.unknown;
-  const exclusivityPoints = EXCLUSIVITY_POINTS[link.exclusivity];
-  const formatPoints = FORMAT_POINTS[link.format];
-  const localityPoints = link.outOfTown ? LOCALITY_POINTS.out_of_town : LOCALITY_POINTS.nyc;
-
-  return hostPoints + exclusivityPoints + formatPoints + localityPoints;
+  const host = isTierOneHost(text) ? HOST_TIER_POINTS.tier_1 : HOST_TIER_POINTS.unknown;
+  // Fall back to the schema defaults for any value outside the current enum
+  // (legacy rows, manual SQL) so an unmapped value can't make the score NaN.
+  const exclusivity = EXCLUSIVITY_POINTS[link.exclusivity] ?? EXCLUSIVITY_POINTS.capped;
+  const format = FORMAT_POINTS[link.format] ?? FORMAT_POINTS.mixer;
+  const locality = link.outOfTown ? LOCALITY_POINTS.out_of_town : LOCALITY_POINTS.nyc;
+  const count = extractAttendeeCount(text);
+  const intimacy =
+    count === null
+      ? INTIMACY_POINTS.unknown
+      : count <= 50
+        ? INTIMACY_POINTS.small
+        : count <= 150
+          ? INTIMACY_POINTS.medium
+          : INTIMACY_POINTS.large;
+  return host + exclusivity + format + locality + intimacy;
 }
 
-/** Same 60/40 split computeCompositeScore uses for structural/semantic. */
-export function computeBlendedLinkScore(personalFit: number, curationQuality: number): number {
-  return Math.round(0.6 * personalFit + 0.4 * curationQuality);
+// ---- Relevance ---------------------------------------------
+
+const WORD_RE = /[a-z0-9]+/g;
+function tokenize(text: string): Set<string> {
+  return new Set((text.toLowerCase().match(WORD_RE) ?? []).filter((w) => w.length > 2));
+}
+
+/**
+ * Keyword-overlap relevance FALLBACK, used when semantic embeddings aren't
+ * available (no OPENAI_API_KEY, or an un-embedded row). Relevance only: profile
+ * type keyword hits + distinctive bio-word overlap against the link's own text.
+ * Host prestige and event size are quality signals and live in the CQS, not
+ * here — they used to be double-counted across fit and CQS. Token matching is
+ * word-boundary (via tokenize), not substring, so "ai" no longer matches
+ * "brain" and "vc" no longer matches "service".
+ */
+export function computeKeywordFit(
+  profile: Pick<Profile, "profileType" | "bioBlurb">,
+  link: { title: string | null; description: string | null },
+): number {
+  const linkTokens = tokenize(`${link.title ?? ""} ${link.description ?? ""}`);
+  if (linkTokens.size === 0) return 50;
+
+  // Distinct profile-type "signals" present in the link. Counting distinct
+  // categories hit (rather than raw hits ÷ keyword-list length) means a type
+  // with a longer keyword list isn't unfairly diluted. Types with no keywords
+  // (e.g. "other") are excluded from the denominator so selecting one can't
+  // halve an otherwise-strong match.
+  const types = (profile.profileType ?? []).filter(
+    (t) => (PROFILE_TYPE_KEYWORDS[t] ?? []).length > 0,
+  );
+  let typeHits = 0;
+  for (const type of types) {
+    if (PROFILE_TYPE_KEYWORDS[type].some((kw) => linkTokens.has(kw))) typeHits++;
+  }
+  const typeScore = types.length > 0 ? (typeHits / types.length) * 100 : 50;
+
+  // Distinctive bio words (>4 chars) that also appear in the link.
+  let bioHits = 0;
+  for (const w of tokenize(profile.bioBlurb ?? "")) {
+    if (w.length > 4 && linkTokens.has(w)) bioHits++;
+  }
+  const bioBoost = Math.min(bioHits * 5, 20);
+
+  return Math.round(Math.min(100, typeScore * 0.8 + bioBoost));
+}
+
+/**
+ * Maps a cosine similarity to a 0-100 relevance score. text-embedding-3 puts
+ * clearly-related documents around 0.35-0.55 and unrelated ones near 0.1-0.2;
+ * the linear rescale spreads that band across the full scale so relevance isn't
+ * compressed into the low end. Clamped, so ranking stays sane outside the band.
+ * TODO(stage-2): a learned calibration replaces this constant mapping once we
+ * have click data.
+ */
+const COSINE_FLOOR = 0.15;
+const COSINE_CEIL = 0.55;
+export function semanticRelevance(similarity: number): number {
+  const t = (similarity - COSINE_FLOOR) / (COSINE_CEIL - COSINE_FLOOR);
+  return Math.round(Math.min(1, Math.max(0, t)) * 100);
+}
+
+// ---- Rule-based boosts (additive, capped, never penalize) --
+
+/** Interest-tag overlap between the profile and the link's tags. */
+export function computeInterestBoost(
+  profile: Pick<Profile, "interests">,
+  tags: string[] | null,
+): number {
+  const interests = profile.interests ?? [];
+  const t = tags ?? [];
+  const hits = interests.filter((i) => t.includes(i)).length;
+  return Math.min(hits * 10, 20);
+}
+
+/** Gender-orientation match (e.g. a womens_focused tag for a "woman" profile). */
+export function computeGenderBoost(
+  profile: Pick<Profile, "genderIdentity">,
+  tags: string[] | null,
+): number {
+  const tag = profile.genderIdentity ? GENDER_ORIENTATION_TAGS[profile.genderIdentity] : undefined;
+  return tag && (tags ?? []).includes(tag) ? 15 : 0;
+}
+
+export type LinkScore = {
+  /** Final 0-100 rank. */
+  score: number;
+  /** 0-100 relevance component (semantic or keyword). */
+  relevance: number;
+  /** 0-100 quality prior (CQS). */
+  quality: number;
+  /** Additive rule-based boosts folded into the score. */
+  boosts: number;
+  /** True when semantic relevance was used, false when the keyword fallback was. */
+  usedEmbedding: boolean;
+};
+
+type ScorableLink = Pick<
+  CuratedLink,
+  "title" | "description" | "exclusivity" | "format" | "outOfTown" | "tags"
+>;
+
+type RankableProfile = Pick<
+  Profile,
+  "profileType" | "bioBlurb" | "interests" | "genderIdentity"
+>;
+
+/**
+ * The single discovery-ranking entry point — the homepage, category pages, the
+ * profile page, and the weekly digest all call this so their numbers can't
+ * drift (they used to). Relevance is semantic when both embeddings are present,
+ * otherwise the keyword-fit fallback; quality is always the CQS; interest and
+ * gender boosts are additive on top. With no profile the score is pure quality,
+ * which is what an anonymous/category browse should rank by.
+ */
+export function scoreCuratedLink(
+  profile: RankableProfile | null,
+  link: ScorableLink,
+  opts?: { profileEmbedding?: number[] | null; linkEmbedding?: number[] | null },
+): LinkScore {
+  const quality = computeCurationQualityScore(link);
+  if (!profile) {
+    return { score: quality, relevance: 0, quality, boosts: 0, usedEmbedding: false };
+  }
+
+  const pe = opts?.profileEmbedding;
+  const le = opts?.linkEmbedding;
+  let relevance: number;
+  let usedEmbedding = false;
+  if (pe && le && pe.length === le.length) {
+    relevance = semanticRelevance(cosineSimilarity(pe, le));
+    usedEmbedding = true;
+  } else {
+    relevance = computeKeywordFit(profile, link);
+  }
+
+  const boosts =
+    computeInterestBoost(profile, link.tags) + computeGenderBoost(profile, link.tags);
+  const base = RELEVANCE_WEIGHT * relevance + QUALITY_WEIGHT * quality;
+  const score = Math.round(Math.min(100, Math.max(0, base + boosts)));
+  return { score, relevance, quality, boosts, usedEmbedding };
+}
+
+/**
+ * A short, honest explanation of why a link ranked where it did — a tier word
+ * for the score chip and a plain-language reason line for the card. Turns the
+ * bare number into "here's why you're seeing this" without over-claiming.
+ */
+export function describeFit(link: ScorableLink, s: LinkScore): { tier: string; reason: string } {
+  const tier =
+    s.score >= 85
+      ? "Strong fit"
+      : s.score >= 70
+        ? "Good fit"
+        : s.score >= 55
+          ? "Fair fit"
+          : "Worth a look";
+
+  const reasons: string[] = [];
+  if (isTierOneHost(`${link.title ?? ""} ${link.description ?? ""}`)) reasons.push("notable host");
+  if (link.exclusivity === "invite_only") reasons.push("invite-only");
+  else if (link.format === "dinner") reasons.push("intimate dinner");
+  if (s.relevance >= 65) reasons.push("matches your profile");
+  if (s.boosts > 0) reasons.push("matches your interests");
+
+  return { tier, reason: reasons.slice(0, 2).join(" · ") };
 }
