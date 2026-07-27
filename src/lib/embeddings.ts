@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { createOpenAI } from "@ai-sdk/openai";
 import { embed, embedMany } from "ai";
 import type { curatedLinks, events, profiles } from "@/db/schema";
 
@@ -17,9 +17,34 @@ import type { curatedLinks, events, profiles } from "@/db/schema";
 export const EMBEDDING_DIM = 1536;
 const MODEL_ID = "text-embedding-3-small";
 
-/** Cheap, allocation-free gate the rest of the app checks before doing embedding work. */
+/**
+ * Resolves the OpenAI key, tolerating the casing the key was actually stored
+ * under. Env var names are case-sensitive on Linux, so a var added as
+ * `OpenAI_API_Key` is invisible to `process.env.OPENAI_API_KEY` and embeddings
+ * silently fall back to keyword matching. Vercel marks the key "Sensitive"
+ * (write-only) and disables renaming it, so the value can't simply be moved to
+ * the canonical name — we match case-insensitively instead. Prefers the exact
+ * canonical name when it exists.
+ */
+function resolveOpenAIKey(): string | undefined {
+  const canonical = process.env.OPENAI_API_KEY;
+  if (canonical) return canonical;
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value && name.toLowerCase() === "openai_api_key") return value;
+  }
+  return undefined;
+}
+
+/** Cheap gate the rest of the app checks before doing embedding work. */
 export function embeddingsEnabled(): boolean {
-  return !!process.env.OPENAI_API_KEY;
+  return !!resolveOpenAIKey();
+}
+
+/** Provider bound to the resolved key. Built per call rather than at module
+ * load so it picks up env that arrives later (e.g. dotenv in scripts), and so
+ * the key is never read when embeddings are disabled. */
+function provider() {
+  return createOpenAI({ apiKey: resolveOpenAIKey() });
 }
 
 /** Embed one document. Returns null when embeddings are disabled, the input is
@@ -29,7 +54,7 @@ export async function embedText(text: string): Promise<number[] | null> {
   if (!embeddingsEnabled() || !value) return null;
   try {
     const { embedding } = await embed({
-      model: openai.textEmbedding(MODEL_ID),
+      model: provider().textEmbedding(MODEL_ID),
       value,
     });
     return embedding;
@@ -61,7 +86,7 @@ export async function embedTexts(texts: string[]): Promise<(number[] | null)[]> 
     const chunk = jobs.slice(start, start + EMBED_BATCH);
     try {
       const { embeddings } = await embedMany({
-        model: openai.textEmbedding(MODEL_ID),
+        model: provider().textEmbedding(MODEL_ID),
         values: chunk.map((j) => j.text),
       });
       chunk.forEach((j, k) => {
