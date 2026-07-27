@@ -117,18 +117,39 @@ export async function saveProfile(formData: FormData) {
   // uploaded resume text if present, else whatever was previously extracted.
   // Returns null when OPENAI_API_KEY is unset — in that case we leave any
   // existing embedding untouched rather than wiping it.
-  const embedding = await embedText(
-    buildProfileDocument({
-      fullName,
-      title: title || null,
-      company: company || null,
-      profileType: selectedTypes,
-      bioBlurb: bioBlurb || null,
-      interests,
-      tags: existing?.tags ?? null,
-      resumeTextExtracted: resumeTextExtracted ?? existing?.resumeTextExtracted ?? null,
-    }),
-  );
+  const nextDocument = buildProfileDocument({
+    fullName,
+    title: title || null,
+    company: company || null,
+    profileType: selectedTypes,
+    bioBlurb: bioBlurb || null,
+    interests,
+    tags: existing?.tags ?? null,
+    resumeTextExtracted: resumeTextExtracted ?? existing?.resumeTextExtracted ?? null,
+  });
+
+  // Only pay for an embedding when the embedded TEXT actually changed. Most
+  // profile saves edit fields the vector doesn't derive from (email, linkedin,
+  // headshot, digest opt-in), so rebuilding the previous document and comparing
+  // skips the API call — removing ~300ms from the save path and avoiding
+  // needless spend/rate-limit pressure. Compared against the stored row rather
+  // than a hash column so this needs no migration.
+  const previousDocument = existing
+    ? buildProfileDocument({
+        fullName: existing.fullName,
+        title: existing.title,
+        company: existing.company,
+        profileType: existing.profileType,
+        bioBlurb: existing.bioBlurb,
+        interests: existing.interests,
+        tags: existing.tags,
+        resumeTextExtracted: existing.resumeTextExtracted,
+      })
+    : null;
+  const documentUnchanged =
+    previousDocument !== null && previousDocument === nextDocument && !!existing?.embedding;
+
+  const embedding = documentUnchanged ? null : await embedText(nextDocument);
 
   // Atomic upsert on the unique userId — replaces a check-then-insert that
   // could 500 on two concurrent first-saves. On update we only overwrite

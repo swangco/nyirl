@@ -1,0 +1,141 @@
+# NY IRL — Recommender system: embedding plan, cost model, and evaluation
+
+Date: 2026-07-27. Scope: backend only (`src/lib`, `scripts/`, `src/db`) — a second
+developer owns UI/UX on `main` today, so nothing here touches components or pages.
+
+## 1. Where the recommender stands
+
+Live in production today:
+
+```
+score(user, item) = clamp(0.6·relevance + 0.4·quality + boosts, 0, 100)
+
+  relevance = 100·calibrate(cosine(profileVec, itemVec))   ← pgvector, text-embedding-3-small
+              → falls back to keyword fit when either vector is missing
+  quality   = Curation Quality Score (host tier, exclusivity, format, locality, intimacy)
+  boosts    = interest-tag overlap (+, capped 20) + gender-orientation match (+15)
+```
+
+All 48 production rows are embedded (4 profiles, 41 links, 3 events). Applicant
+scoring uses the same vectors (`applicantSemanticScore`), so no LLM call sits in
+the apply path.
+
+## 2. The cost model — and where the real cost actually is
+
+`text-embedding-3-small` is **$0.02 / 1M tokens**. Measured document sizes:
+
+| Document | Typical tokens | Cost per embedding |
+|---|---|---|
+| Event / curated link | 100–200 | $0.000003 |
+| Profile (no resume) | 120–300 | $0.000005 |
+| Profile (with resume, truncated at 6k chars) | ~1,500 | $0.00003 |
+
+Extrapolated:
+
+| Scale | Embedding spend |
+|---|---|
+| Today (48 rows) | **$0.001 one-time** |
+| 10k users + 5k events | **~$0.15 one-time**, then cents/month |
+| 100k users + 50k events | **~$1.50 one-time**, ~$0.05/mo steady-state |
+
+**Conclusion: embedding token cost is not a real cost at any plausible scale.**
+It would be dishonest to optimize it as if it were. The costs that actually
+bite are, in order:
+
+1. **Request-path latency.** Embedding on profile save added ~300ms to every
+   save, including saves that changed nothing the vector derives from.
+2. **Rate limits / failure blast radius** during bulk backfills.
+3. **Storage and query compute** once the candidate set is large — 1536 dims ×
+   4 bytes = 6KB/row, so 100k rows ≈ 600MB, and a JS cosine over every row per
+   page render does not scale.
+4. **LLM (Haiku) calls**, which are ~1000× the price of an embedding — already
+   moved off the hot path and made host-triggered.
+
+So the optimizations below target latency, resilience, and query cost, not token
+spend.
+
+## 3. Optimizations
+
+### 3.1 Skip unchanged documents (implemented)
+Most profile saves edit fields the vector doesn't derive from (email, LinkedIn,
+headshot, digest opt-in). `saveProfile` now rebuilds the *previous* document from
+the stored row and compares it to the next one; if identical and an embedding
+already exists, the API call is skipped entirely.
+
+Deliberately compares text rather than storing a hash column — same benefit, no
+migration, no merge-conflict surface while another dev is on `main`.
+
+### 3.2 Batching (implemented)
+`embedTexts` chunks at 96 inputs per request (OpenAI caps 2048 inputs / ~300k
+tokens). A failed chunk nulls only its own slots instead of the whole run. Blank
+documents map to `null` rather than being embedded as `" "` — a garbage vector
+stored as non-null would suppress the keyword fallback.
+
+### 3.3 Content-addressed cache (implemented, eval harness)
+`scripts/eval/cache.ts` keys vectors by `sha256(model:dims:text)` and stores them
+float32-base64 (~4× smaller than JSON floats). Re-running the evaluation with
+different *scoring* logic costs $0. This is the same principle as 3.1.
+
+### 3.4 Dimension reduction — measured, not assumed
+`text-embedding-3-*` are Matryoshka models: `dimensions: 512` truncates with
+minimal quality loss and cuts storage/query cost 3×. Rather than guess, the eval
+harness runs both and reports the quality delta (§5). Adopt only if the metric
+cost is negligible.
+
+### 3.5 OpenAI Batch API — deliberately NOT adopted
+50% off, but 24h turnaround and a separate job-polling code path. At $1.50 for a
+100k-row backfill, the saving is $0.75. Not worth the complexity; revisit only if
+a single backfill ever exceeds ~10M tokens.
+
+## 4. When to run embeddings
+
+| Trigger | Path | Rationale |
+|---|---|---|
+| Profile save | inline, **skipped if document unchanged** | Fresh vectors matter immediately for the user's own feed |
+| Curated link add (single + bulk) | inline, batched | Links are insert-only; no re-embed churn |
+| Existing/missing rows | `POST /api/admin/embeddings` | Runs where the key lives; idempotent |
+| Ongoing drift | *(recommended next)* nightly cron sweeping `WHERE embedding IS NULL` | Catches rows written while the key was down |
+
+The inline path is safe because it degrades: any failure returns `null`, the row
+keeps its old vector (or none), and scoring falls back to keyword fit.
+
+## 5. How this is tested
+
+Because there is no click data yet, the ground truth is **blind LLM judges**, not
+the embeddings themselves — otherwise the evaluation would be circular.
+
+**Dataset** (`.context/recsys-eval/`, generated by a 23-agent workflow):
+- **200 events** across 8 themes, written as realistic Luma-style listings with
+  specific audiences, including ~6 deliberately off-target events (HVAC trade
+  show, pet-grooming convention) as distractors.
+- **50 users** across 5 archetypes (founders, engineers, investors, operators,
+  edge cases: job-seekers, designers, lifestyle-led, sparse profiles).
+- Events and users were generated **independently** — no coordination — so the
+  matches aren't true by construction.
+- **Gold labels**: 10 judge agents, each reading the full 200-event catalog,
+  return for every user a ranked top-10 plus 8 explicitly-irrelevant events.
+  Judges never see any embedding output.
+
+**Metrics** (`scripts/eval/metrics.ts`) separate three distinct failure modes:
+
+| Metric | Question it answers |
+|---|---|
+| P@5 / P@10 | Are we surfacing the right things at all? |
+| Recall@10 | How much of what a human would pick do we find? |
+| NDCG@10 | Are they in the right ORDER? (graded by gold rank) |
+| MRR | Is the very first result good? |
+| **FP@10** | Are we surfacing things a human called actively wrong? |
+
+FP@10 is weighted most heavily in judgement: for a curation product, one bad pick
+in the top 5 costs more trust than a good pick landing 6th instead of 2nd.
+
+**Variants compared** — against the *real* production functions, not
+reimplementations: random floor, CQS-only (no personalization), keyword-only, the
+old keyword blend, raw cosine, current production blend, percentile-calibrated
+blend, and a relevance-weight sweep.
+
+Run: `npx tsx scripts/eval/run.ts [--dims 512] [--sweep]`
+
+## 6. Results and decisions
+
+See `§Results` appended below once the harness has run.
