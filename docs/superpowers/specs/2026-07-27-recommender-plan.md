@@ -260,17 +260,56 @@ recomputing changes nothing there. Scores are recomputed and displayed, but the
 stored values are kept as the audit trail of what the host actually saw, with
 drift surfaced as "was N".
 
-## 9. Required deploy step
+## 9. Deploy steps
 
-Removing résumé text from the profile document makes **existing production
-vectors stale** — they were built from the old text, and the default backfill
-only fills `NULL`. After this branch is deployed:
+**1. Add the column FIRST — this one is not optional.** Drizzle selects every
+column, so until `profiles.embedding_document` exists, every profiles query
+throws and the app is down, not degraded.
+
+```
+psql "$DATABASE_URL" -f db/manual/2026-07-28-profile-embedding-document.sql
+```
+
+Hand-written rather than a drizzle-kit migration because this project has no
+migrations directory and uses `db:push`; generating one produces a 160-line
+baseline with 11 `CREATE TABLE`s, which is a workflow change, not a column add.
+Already applied to the live database; the statement is idempotent.
+
+**2. Re-embed.** Removing resume text from the profile document made every
+existing vector stale-but-not-null, which a `WHERE embedding IS NULL` backfill
+can never see. Both backfill paths now compare the stored `embedding_document`
+to what the code builds today and repair the difference, so the ordinary call
+is enough:
 
 ```
 curl -X POST -H "authorization: Bearer $CRON_SECRET" \
-  "https://<deployment>/api/admin/embeddings?force=1"
+  "https://<deployment>/api/admin/embeddings"
 ```
 
-Do this *after* deploy, not before: while `main` still builds documents with
-résumé text, re-embedding without it would leave the two out of sync and cause
-churn on every profile save.
+`GET` on the same URL reports `profilesMissingVector` and `profilesStaleDocument`
+separately, so the repair can be verified rather than assumed. Run it *after*
+deploy: while `main` still builds documents with resume text, the two would
+disagree and re-embed each other on every save.
+
+## 10. Adversarial review, round 2
+
+After implementation, a reviewer with live-database access re-audited the branch
+and confirmed **8 defects**; 7 needed code changes (commit `08acb1f`). The three
+that would have been worst in front of a real host:
+
+- **Exclusion flags fired on the target audience.** On the live event's own
+  rules, every investor and operator was flagged as "not currently building a
+  company" — on an event whose `typeCaps` deliberately reserve seats for them.
+  The caps UI and the flag UI contradicted each other on one screen.
+- **Brand diversity was reverted.** It shipped on the argument that its downside
+  was one-sided. Run over the live 41-link corpus, it demoted a listing below an
+  **identically-scored** one because three unrelated events share the word
+  "community". Weak evidence for plus demonstrated harm against means don't ship.
+- **The headline fix would not have taken effect.** Stale vectors had no repair
+  path that anything actually invoked.
+
+The pattern worth keeping: *design* review rejected 4 of 5 proposals before they
+were written, and *code* review against live data caught 8 more that no amount of
+reasoning about the diff would have surfaced. Neither pass substitutes for the
+other, and both beat measurement alone — the calibration change looked fine in
+aggregate metrics while being wrong for individual users.
