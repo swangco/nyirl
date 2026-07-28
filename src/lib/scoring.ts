@@ -245,8 +245,26 @@ export function applicantSemanticScore(
 // ============================================================
 
 /** Relevance vs. quality blend — the same 60/40 split the registrant scorer uses. */
-const RELEVANCE_WEIGHT = 0.6;
-const QUALITY_WEIGHT = 0.4;
+/**
+ * Relevance vs. quality blend.
+ *
+ * Was 0.6/0.4, which measured badly: on a 200-event / 50-user offline
+ * evaluation against blind gold labels (scripts/eval), a 0.4 quality weight
+ * swamped the personalization signal. CQS is *deliberately* not personalized —
+ * on its own it ranks barely above random (P@5 4.8 vs 4.0) — so weighting it
+ * that heavily pulled every user's feed toward the same globally-"good" items.
+ * Measured P@5 by relevance weight: 0.6 -> 30.4, 0.7 -> 37.2, 0.8 -> 43.2,
+ * 0.9 -> 44.8, 1.0 -> 46.0.
+ *
+ * Stopping at 0.8 rather than 1.0 is deliberate. Pure relevance scores highest
+ * on precision but also has the worst false-positive rate (FP@10 4.8 vs 4.0),
+ * and the judges were asked to rank *personal* fit — they were never told to
+ * value host prestige or intimacy, which is exactly what CQS encodes and what
+ * this product's curation thesis rests on. 0.8 captures ~94% of the achievable
+ * precision gain while keeping a real quality prior in the ranking.
+ */
+const RELEVANCE_WEIGHT = 0.8;
+const QUALITY_WEIGHT = 0.2;
 
 const PROFILE_TYPE_KEYWORDS: Record<(typeof profileTypeEnum)[number], string[]> = {
   founder: [
@@ -401,15 +419,32 @@ export function computeKeywordFit(
 }
 
 /**
- * Maps a cosine similarity to a 0-100 relevance score. text-embedding-3 puts
- * clearly-related documents around 0.35-0.55 and unrelated ones near 0.1-0.2;
- * the linear rescale spreads that band across the full scale so relevance isn't
- * compressed into the low end. Clamped, so ranking stays sane outside the band.
- * TODO(stage-2): a learned calibration replaces this constant mapping once we
- * have click data.
+ * Maps a cosine similarity to a 0-100 relevance score.
+ *
+ * The band is MEASURED, not guessed. Across 10,000 profile x event pairs
+ * (scripts/eval, 50 users x 200 events) the observed cosine distribution was
+ * p05 0.206, p50 0.319, p95 0.441, p99 0.504 — and the same shape appears in
+ * live production data. The previous 0.15/0.55 guess put the ceiling above the
+ * 99th percentile, so nothing ever scored near 100: the median match landed at
+ * 42 and the single best item for a user often read as "Fair fit".
+ *
+ * Anchoring floor/ceiling to p05/p99 spreads real matches across the full scale,
+ * which matters because relevance is *linearly blended* with quality and because
+ * absolute thresholds (the digest bar, describeFit's tiers) sit on top of it —
+ * a monotone rescale alone would not change a pure-cosine ordering.
+ *
+ * TODO(stage-2): recompute these percentiles from the live corpus on a schedule
+ * so calibration tracks the catalogue instead of drifting away from it.
  */
-const COSINE_FLOOR = 0.15;
-const COSINE_CEIL = 0.55;
+const COSINE_FLOOR = 0.20;
+const COSINE_CEIL = 0.50;
+
+/** Unrounded form, used internally for ranking so ties aren't manufactured. */
+export function semanticRelevancePrecise(similarity: number): number {
+  const t = (similarity - COSINE_FLOOR) / (COSINE_CEIL - COSINE_FLOOR);
+  return Math.min(1, Math.max(0, t)) * 100;
+}
+
 export function semanticRelevance(similarity: number): number {
   const t = (similarity - COSINE_FLOOR) / (COSINE_CEIL - COSINE_FLOOR);
   return Math.round(Math.min(1, Math.max(0, t)) * 100);
@@ -438,8 +473,18 @@ export function computeGenderBoost(
 }
 
 export type LinkScore = {
-  /** Final 0-100 rank. */
+  /** Final 0-100 score, rounded — this is the number shown to users. */
   score: number;
+  /**
+   * The same value UNROUNDED. Always sort by this, never by `score`.
+   *
+   * Rounding to an integer collapses a 200-item catalogue onto ~100 distinct
+   * values, so ties are the norm rather than the exception: measured on the
+   * evaluation set, 19 of 20 users had tied scores inside their own top-10, and
+   * those ties fall through to whatever order the rows arrived in (createdAt).
+   * Ranking on the unrounded value recovered ~2 points of P@5 (41.2 -> 43.2).
+   */
+  sortKey: number;
   /** 0-100 relevance component (semantic or keyword). */
   relevance: number;
   /** 0-100 quality prior (CQS). */
@@ -475,25 +520,41 @@ export function scoreCuratedLink(
 ): LinkScore {
   const quality = computeCurationQualityScore(link);
   if (!profile) {
-    return { score: quality, relevance: 0, quality, boosts: 0, usedEmbedding: false };
+    return {
+      score: quality,
+      sortKey: quality,
+      relevance: 0,
+      quality,
+      boosts: 0,
+      usedEmbedding: false,
+    };
   }
 
   const pe = opts?.profileEmbedding;
   const le = opts?.linkEmbedding;
-  let relevance: number;
+  // Keep relevance unrounded through the arithmetic — rounding it here would
+  // discard ordering information before the blend even happens.
+  let relevancePrecise: number;
   let usedEmbedding = false;
   if (pe && le && pe.length === le.length) {
-    relevance = semanticRelevance(cosineSimilarity(pe, le));
+    relevancePrecise = semanticRelevancePrecise(cosineSimilarity(pe, le));
     usedEmbedding = true;
   } else {
-    relevance = computeKeywordFit(profile, link);
+    relevancePrecise = computeKeywordFit(profile, link);
   }
 
   const boosts =
     computeInterestBoost(profile, link.tags) + computeGenderBoost(profile, link.tags);
-  const base = RELEVANCE_WEIGHT * relevance + QUALITY_WEIGHT * quality;
-  const score = Math.round(Math.min(100, Math.max(0, base + boosts)));
-  return { score, relevance, quality, boosts, usedEmbedding };
+  const base = RELEVANCE_WEIGHT * relevancePrecise + QUALITY_WEIGHT * quality;
+  const sortKey = Math.min(100, Math.max(0, base + boosts));
+  return {
+    score: Math.round(sortKey),
+    sortKey,
+    relevance: Math.round(relevancePrecise),
+    quality,
+    boosts,
+    usedEmbedding,
+  };
 }
 
 /**

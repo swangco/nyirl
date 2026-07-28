@@ -123,6 +123,11 @@ async function main() {
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${proxySecret}`,
+        // Preview deployments sit behind Vercel SSO; the automation bypass lets
+        // offline tooling reach them without a browser session.
+        ...(process.env.VERCEL_BYPASS
+          ? { "x-vercel-protection-bypass": process.env.VERCEL_BYPASS }
+          : {}),
       },
       body: JSON.stringify({ texts: values }),
     });
@@ -140,6 +145,7 @@ async function main() {
     computeKeywordFit,
     computeInterestBoost,
     semanticRelevance,
+    scoreCuratedLink,
   } = await import("../../src/lib/scoring");
 
   const events = loadAll<SynthEvent>("events_");
@@ -231,6 +237,13 @@ async function main() {
     computeInterestBoost(profileShape(u), e.tags ?? []);
 
   const variants: Record<string, Scorer> = {
+    // The real end-to-end production function, exercised exactly as the app
+    // calls it — the single number that says whether shipping this helped.
+    "SHIPPED scoreCuratedLink()": (u, e) =>
+      scoreCuratedLink(profileShape(u) as never, linkShape(e), {
+        profileEmbedding: vecs.get(u.id),
+        linkEmbedding: vecs.get(e.id),
+      }).sortKey,
     "random (floor)": () => rand(),
     "cqs only (no personalization)": (_u, e) => cqs.get(e.id)!,
     "keyword only": (u, e) => kw.get(`${u.id}|${e.id}`)!,
@@ -246,6 +259,30 @@ async function main() {
       variants[`calibrated ${w} sem + ${(1 - w).toFixed(2)} cqs`] = (u, e) =>
         w * relCalib(u, e) + (1 - w) * cqs.get(e.id)! + boost(u, e);
     }
+    // Quality as a FLOOR rather than a blended term: rank on relevance, but
+    // push genuinely low-quality listings down. Tests whether the FP@10 cost of
+    // a high relevance weight can be bought back without losing precision.
+    for (const floor of [35, 45]) {
+      variants[`sem 0.9 + cqs floor<${floor}`] = (u, e) => {
+        const base = 0.9 * relCalib(u, e) + 0.1 * cqs.get(e.id)! + boost(u, e);
+        return cqs.get(e.id)! < floor ? base - 40 : base;
+      };
+    }
+    // Reciprocal-rank fusion: combines two rankings without needing their
+    // scores to share a scale — immune to the calibration problem entirely.
+    const rankMap = (key: (e: SynthEvent) => number) => {
+      const order = [...events].sort((a, b) => key(b) - key(a));
+      return new Map(order.map((e, i) => [e.id, i + 1]));
+    };
+    const cqsRank = rankMap((e) => cqs.get(e.id)!);
+    const semRankByUser = new Map(
+      users.map((u) => [u.id, rankMap((e) => cosByPair.get(`${u.id}|${e.id}`)!)]),
+    );
+    variants["RRF(semantic, cqs) k=60"] = (u, e) => {
+      const rs = semRankByUser.get(u.id)!.get(e.id)!;
+      const rq = cqsRank.get(e.id)!;
+      return 1 / (60 + rs) + 1 / (60 + rq);
+    };
   }
 
   // ---- evaluate ----

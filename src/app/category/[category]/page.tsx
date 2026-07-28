@@ -111,9 +111,10 @@ export default async function CategoryPage({
         tier: isProfileComplete ? fitTier : "Curated",
         reason,
         score: s.score,
+        sortKey: s.sortKey,
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.sortKey - a.sortKey);
 
   const items = [...hostedItems, ...linkItems];
 

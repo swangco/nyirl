@@ -27,6 +27,8 @@ export type DigestItem = {
   date: Date;
   href: string;
   score: number;
+  /** Unrounded score — sort by this, not `score` (see LinkScore.sortKey). */
+  sortKey: number;
 };
 
 const isProfileComplete = (profile: Profile) =>
@@ -69,31 +71,38 @@ export function buildDigestItems(
         base: appUrl,
       }),
       score: computeStructuralScore(profile, e.criteriaWeights, e.tags),
+      sortKey: computeStructuralScore(profile, e.criteriaWeights, e.tags),
     }));
 
   const linkItems: DigestItem[] = upcomingLinks
     .filter((l) => !alreadySent.has(`link:${l.id}`) && l.eventDate)
-    .map((l) => ({
-      kind: "link" as const,
-      id: l.id,
-      title: l.title || l.sourceUrl,
-      description: l.description,
-      date: l.eventDate!,
-      href: trackedHref({
-        id: l.id,
-        kind: "link",
-        source: "digest",
-        uid: profile.userId,
-        base: appUrl,
-      }),
-      score: scoreCuratedLink(profile, l, {
+    .map((l) => {
+      const s = scoreCuratedLink(profile, l, {
         profileEmbedding: profile.embedding,
         linkEmbedding: l.embedding,
-      }).score,
-    }))
+      });
+      return {
+        kind: "link" as const,
+        id: l.id,
+        title: l.title || l.sourceUrl,
+        description: l.description,
+        date: l.eventDate!,
+        href: trackedHref({
+          id: l.id,
+          kind: "link",
+          source: "digest",
+          uid: profile.userId,
+          base: appUrl,
+        }),
+        score: s.score,
+        sortKey: s.sortKey,
+      };
+    })
     .filter((item) => item.score >= DIGEST_QUALITY_THRESHOLD);
 
-  return [...eventItems, ...linkItems].sort((a, b) => b.score - a.score);
+  // Sort on the unrounded value: integer scores tie constantly across a large
+  // catalogue, and ties would otherwise resolve to row order.
+  return [...eventItems, ...linkItems].sort((a, b) => b.sortKey - a.sortKey);
 }
 
 /** Escapes text interpolated into the digest HTML — titles/descriptions are

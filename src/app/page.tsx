@@ -126,9 +126,10 @@ export default async function Home() {
             tier,
             reason,
             score: s.score,
+            sortKey: s.sortKey,
           };
         })
-        .sort((a, b) => b.score - a.score)
+        .sort((a, b) => b.sortKey - a.sortKey)
     : [];
 
   const recommendations = isProfileComplete ? [...hostedItems, ...linkItems] : [];
