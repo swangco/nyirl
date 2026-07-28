@@ -9,10 +9,10 @@ import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { StatusPill } from "@/components/status-pill";
 
-export default async function ApplicationsPage() {
+export default async function AppliedPage() {
   const session = await auth();
   if (!session?.user?.id) {
-    redirect("/sign-in?next=/applications");
+    redirect("/sign-in?next=/applied");
   }
 
   // Every application in one place — status previously lived only on each

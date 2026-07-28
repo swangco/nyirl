@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Lora, Manrope } from "next/font/google";
 import Link from "next/link";
 import { auth, signOut } from "@/auth";
+import { SiteNav } from "@/components/site-nav";
 import "./globals.css";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
@@ -48,30 +49,22 @@ export default async function RootLayout({
             >
               NY IRL
             </Link>
-            <nav className="flex items-center gap-4 sm:gap-5">
-              {signedIn ? (
-                <>
-                  <Link href="/" className={navLink}>
-                    Discover
-                  </Link>
-                  <Link href="/applications" className={navLink}>
-                    Applied
-                  </Link>
-                  <Link href="/profile" className={navLink}>
-                    Profile
-                  </Link>
-                  {isHost && (
-                    <Link href="/curate" className={navLink}>
-                      Host
-                    </Link>
-                  )}
-                </>
-              ) : (
+            {signedIn ? (
+              <SiteNav
+                items={[
+                  { href: "/", label: "Discover" },
+                  { href: "/applied", label: "Applied" },
+                  { href: "/profile", label: "Profile" },
+                  ...(isHost ? [{ href: "/curate", label: "Host" }] : []),
+                ]}
+              />
+            ) : (
+              <nav className="flex items-center gap-4 sm:gap-5">
                 <Link href="/sign-in" className={navLink}>
                   Sign in
                 </Link>
-              )}
-            </nav>
+              </nav>
+            )}
           </div>
         </header>
 
