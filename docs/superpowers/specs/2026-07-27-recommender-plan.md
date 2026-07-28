@@ -136,6 +136,69 @@ blend, and a relevance-weight sweep.
 
 Run: `npx tsx scripts/eval/run.ts [--dims 512] [--sweep]`
 
-## 6. Results and decisions
+## 6. Results
 
-See `§Results` appended below once the harness has run.
+Dataset: 200 events × 50 users = 10,000 scored pairs, 50 gold-labelled users.
+All variants measured against the **real** production functions.
+
+```
+variant                          P@5  P@10  R@10  NDCG   MRR FP@10
+------------------------------------------------------------------
+SHIPPED scoreCuratedLink()      41.2  31.8  31.8  40.8  73.6   4.0
+BASELINE 0.6/0.4 @ .15-.55      27.2  21.6  21.6  27.3  59.9   3.0
+random (floor)                   4.0   4.0   4.0   4.3  14.9   4.4
+cqs only (no personalization)    4.8   4.4   4.4   4.6  14.1   2.0
+keyword only                    28.4  23.0  23.0  28.6  55.2   5.6
+keyword blend (old fallback)    16.4  13.4  13.4  14.7  39.5   2.2
+semantic raw cosine             44.8  34.8  34.8  45.3  80.4   5.6
+```
+
+**Net: P@5 +51%, NDCG +49%, MRR +23%; FP@10 3.0 → 4.0.**
+
+### What the numbers actually said
+
+- **The quality weight was the bug.** CQS alone ranks barely above random
+  (P@5 4.8 vs 4.0) because it is deliberately not personalized. At 0.4 it was
+  dominating: the old blend (27.2) scored *worse than keyword matching alone*
+  (28.4). Sweep: 0.6 → 30.4, 0.7 → 37.2, 0.8 → 43.2, 0.9 → 44.8, 1.0 → 46.0.
+- **Rounding manufactured ties.** Integer scores map 200 events onto ~100 values;
+  19 of 20 users had ties inside their own top-10, broken by row order.
+- **Calibration was theatre.** Re-fitting the cosine band to measured percentiles
+  *looked* obviously right and was worth +0.008 P@5 (SE 0.016, t = 0.50). It was
+  reverted — see §7.
+
+### Rejected by the data
+
+- **CQS as a hard floor** on top of relevance: *hurt* precision (44.8 → 40.0) and
+  did not improve FP@10. Rejected.
+- **Reciprocal-rank fusion** of semantic + CQS: collapsed to 16.4. Fusing a
+  near-random ranking 50/50 destroys the signal. Rejected.
+- **512-dimension embeddings**: *not validly measured* — the embed proxy ignores
+  the `dimensions` parameter and returned 1536-dim vectors, so the run was
+  discarded rather than reported. Re-run before making any storage decision.
+
+## 7. What the adversarial review caught
+
+Three real defects in the first version of this change:
+
+1. **A stale-embedding latch** (regression). The skip-if-unchanged optimization
+   used "an embedding exists" as a proxy for "that vector matches this text" — an
+   invariant nothing maintained. One failed embedding call left the old vector
+   with new text, and every later save then saw "unchanged" and never retried;
+   the admin backfill couldn't repair it either (it only fills `NULL`). Now gated
+   on `profiles.embedding_document`, written only on success, so it self-heals.
+2. **The digest cutoff broke in both directions.** The same constant 80 was too
+   strict under the old weights (2 of 4 real users could never receive anything)
+   and too loose under the new ones (an unknown-host out-of-town expo with CQS 18
+   reaches 83.6 on match alone; items clearing 80 with CQS < 50 went 4 → 129).
+   Replaced with a hard quality floor + per-user relative band, and
+   "skip the week" moved to the email level.
+3. **The harness flattered itself.** Its baseline imported `semanticRelevance`
+   from the module under test, so it tracked whatever constants were live — the
+   reported delta was unreproducible and overstated (54% vs the true 51%). The
+   baseline is now pinned to hard-coded constants.
+
+It also correctly flagged that recalibration carried far more risk than value
+(it silently rescales `applicantSemanticScore`, which is **persisted** on
+registrations, so pre- and post-deploy applicants would be ranked on different
+scales) — which is why it was reverted rather than shipped.
