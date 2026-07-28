@@ -8,6 +8,8 @@ import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { StatusPill } from "@/components/status-pill";
 import { generateApplicantRationale, updateRegistrationStatus } from "@/lib/actions/host";
+import { composition, parseTypeCaps, reviewApplicants } from "@/lib/cohort";
+import { scoreRegistration } from "@/lib/scoring";
 
 const decideButton = "rounded-full px-4 py-2 text-sm font-medium transition-colors";
 
@@ -45,12 +47,32 @@ export default async function HostDashboardPage({
     with: { user: { with: { profile: true } } },
   });
 
-  const typeCounts: Record<string, number> = {};
-  for (const reg of regs) {
-    for (const t of reg.user.profile?.profileType ?? []) {
-      typeCounts[t] = (typeCounts[t] ?? 0) + 1;
-    }
-  }
+  // Counts each applicant ONCE by primary type. The previous version added 1
+  // to a counter per selected profileType, so one applicant who ticked five
+  // boxes was counted five times and the room summary was simply wrong.
+  const caps = parseTypeCaps(event.typeCaps);
+  const typeCounts = composition(
+    regs.map((r) => ({ profileType: r.user.profile?.profileType ?? null })),
+    caps,
+  );
+
+  // Activates events.typeCaps / events.excludeRules, which have had real
+  // host-authored values in the database while being read by nothing.
+  const review = reviewApplicants(event, regs.map((r) => ({ registration: r, profile: r.user.profile ?? null })));
+
+  // Stored scores are an audit trail of what was shown at decision time; they
+  // are never refreshed, so recompute alongside them and surface any drift.
+  const liveScores = new Map(
+    regs.map((r) => [
+      r.id,
+      r.user.profile
+        ? scoreRegistration(
+            { ...r.user.profile, embedding: r.user.profile.embedding },
+            { criteriaWeights: event.criteriaWeights, tags: event.tags, embedding: event.embedding },
+          )
+        : null,
+    ]),
+  );
 
   return (
     <PageShell width="wide">
@@ -70,6 +92,11 @@ export default async function HostDashboardPage({
               className="rounded-full border border-line bg-surface px-3 py-1 text-foreground-soft"
             >
               {count} {type}
+              {review.cohort.byType[type]?.seats != null && (
+                <span className="ml-1 text-foreground-soft/60">
+                  / {review.cohort.byType[type]!.seats} cap
+                </span>
+              )}
             </span>
           ))}
         </div>
@@ -82,6 +109,9 @@ export default async function HostDashboardPage({
           {regs.map((reg) => {
             const profile = reg.user.profile;
             const decide = updateRegistrationStatus.bind(null, id, reg.id);
+            const view = review.perApplicant.get(reg.id);
+            const live = liveScores.get(reg.id) ?? null;
+            const drifted = live != null && live.composite !== reg.compositeScore;
             return (
               <div key={reg.id} className="rounded-lg border border-line bg-surface p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-4">
@@ -91,7 +121,27 @@ export default async function HostDashboardPage({
                         {profile?.fullName ?? "(no profile)"}
                       </span>
                       <StatusPill status={reg.status} />
+                      {view?.cappedOut && (
+                        <span
+                          className="rounded-full border border-line bg-background px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-foreground-soft"
+                          title="Ranked high enough, but this type has already filled its cap for the room."
+                        >
+                          capped out
+                        </span>
+                      )}
+                      {view?.wouldAdmit && (
+                        <span className="rounded-full border border-accent/30 bg-accent-soft px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-accent">
+                          would admit
+                        </span>
+                      )}
                     </div>
+                    {view?.flags?.length ? (
+                      <p className="mt-1 font-mono text-[11px] text-foreground-soft">
+                        {view.flags
+                          .map((f) => `flag: ${f.rule} (${f.evidence})`)
+                          .join(" · ")}
+                      </p>
+                    ) : null}
                     <p className="truncate text-sm text-foreground-soft">
                       {profile?.title}
                       {profile?.title && profile?.company ? " at " : ""}
@@ -110,11 +160,20 @@ export default async function HostDashboardPage({
                   </div>
                   <div className="shrink-0 text-right">
                     <div className="font-mono text-lg font-semibold tabular-nums">
-                      {reg.compositeScore}
+                      {live?.composite ?? reg.compositeScore}
                     </div>
                     <div className="font-mono text-xs tabular-nums text-foreground-soft/70">
-                      struct {reg.structuralScore} · match {reg.semanticScore}
+                      struct {live?.structural ?? reg.structuralScore} · match{" "}
+                      {live?.semantic ?? reg.semanticScore}
                     </div>
+                    {drifted && (
+                      <div
+                        className="font-mono text-[10px] text-foreground-soft/60"
+                        title="Score at the time this person applied. Recomputed above from current data."
+                      >
+                        was {reg.compositeScore}
+                      </div>
+                    )}
                   </div>
                 </div>
 

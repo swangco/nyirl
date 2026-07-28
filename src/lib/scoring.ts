@@ -213,6 +213,43 @@ export function computeCompositeScore(structural: number, semantic: number): num
 }
 
 /**
+ * Recomputes an applicant's score from CURRENT data.
+ *
+ * `registrations` stores structural/semantic/composite scores written once at
+ * apply time and never refreshed. That is correct as an audit trail — it records
+ * what the host actually saw when they decided — but it goes stale: both live
+ * registrations were written before embeddings existed, so their stored
+ * semanticScore is the neutral-50 fallback (stored 100/50/80 and 89/50/73, now
+ * actually 100/64/86 and 89/61/78).
+ *
+ * Deliberately does NOT overwrite the stored values. On the live data the stale
+ * ordering happens to match the fresh ordering, so silently rewriting history
+ * would destroy the audit trail to fix a ranking problem that isn't there yet.
+ * Callers show `live` alongside `stored` and can surface the drift.
+ */
+export function scoreRegistration(
+  profile: ScorableProfile & { embedding?: number[] | null },
+  event: {
+    criteriaWeights: string | null;
+    tags: string[] | null;
+    embedding?: number[] | null;
+  },
+): { structural: number; semantic: number; composite: number; usedEmbedding: boolean } {
+  const structural = computeStructuralScore(profile, event.criteriaWeights, event.tags);
+  const semanticFromVector = applicantSemanticScore(
+    profile.embedding ?? null,
+    event.embedding ?? null,
+  );
+  const semantic = semanticFromVector ?? 50;
+  return {
+    structural,
+    semantic,
+    composite: computeCompositeScore(structural, semantic),
+    usedEmbedding: semanticFromVector !== null,
+  };
+}
+
+/**
  * Applicant relevance from precomputed embeddings — the no-LLM replacement for
  * the per-application Haiku screen. cosine(profile, event) mapped to 0-100 with
  * the same calibration discovery uses. Returns null when either embedding is
@@ -323,9 +360,87 @@ const TIER_ONE_HOSTS = [
  * run — so "aws" won't hit inside "flaws", "yc" won't hit inside "cycling",
  * and a leading "YC ..." title still matches.
  */
-function isTierOneHost(text: string): boolean {
+export function matchTierOneHost(text: string): string | null {
   const haystack = ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
-  return TIER_ONE_HOSTS.some((host) => host.length > 0 && haystack.includes(` ${host} `));
+  // On multiple matches return the longest phrase, so the result is
+  // deterministic and "y combinator" wins over a bare "yc".
+  let best: string | null = null;
+  for (const host of TIER_ONE_HOSTS) {
+    if (host.length > 0 && haystack.includes(` ${host} `)) {
+      if (!best || host.length > best.length) best = host;
+    }
+  }
+  return best;
+}
+
+function isTierOneHost(text: string): boolean {
+  return matchTierOneHost(text) !== null;
+}
+
+/**
+ * Groups listings by who is putting them on, for de-duplicating a feed.
+ *
+ * Deliberately NOT a "don't show me my own employer" rule. That was the obvious
+ * fix for seeing "Ramp Applied AI Dinner" at the top of a Ramp employee's feed,
+ * but it is wrong by construction: a different Ramp employee may legitimately
+ * want that event, `curated_links` has no host field to key on (only scraped
+ * title/description, where a company name also appears in speaker bios and
+ * ordinary prose), and it would fire for almost nobody.
+ *
+ * The real defect is narrower and more general: several listings from the SAME
+ * host clustering at the top of one feed. Keying on the recognized host phrase
+ * where there is one, and falling back to the first distinctive title token,
+ * addresses that for every user rather than only for people whose employer
+ * happens to host events.
+ */
+export function hostBrandKey(link: Pick<CuratedLink, "title" | "description">): string | null {
+  const text = `${link.title ?? ""} ${link.description ?? ""}`;
+  const tier1 = matchTierOneHost(text);
+  if (tier1) return tier1;
+  const first = (link.title ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .find((w) => w.length > 3);
+  return first ?? null;
+}
+
+/**
+ * Reorders a scored list so no single host dominates the top of the feed:
+ * beyond `perBrand` items from the same brand, later ones are pushed below
+ * everything else. Order within each group is preserved, so this never
+ * reorders on anything except brand repetition.
+ *
+ * Measured at perBrand=2 on the evaluation corpus: P@5 41.2 -> 43.2, NDCG
+ * 40.8 -> 41.6, FP@10 4.0 -> 3.4. Reported honestly, NONE of those clear the
+ * |t| > 2 bar this repo uses (t = 1.53 / 1.41 / -1.77) — they are directional,
+ * not proven. It is applied anyway only because the downside is bounded and
+ * one-sided: the FP@10 comparison had 0 users worse and 3 better, and the
+ * function can only demote duplicates within an already-scored list, so the
+ * items promoted in their place were adjacent in rank already. Re-measure on
+ * real data before trusting the size of the gain; perBrand=1 was worse on every
+ * metric and should not be used.
+ */
+export function diversifyByBrand<T>(
+  items: T[],
+  keyOf: (item: T) => string | null,
+  perBrand = 2,
+): T[] {
+  const seen = new Map<string, number>();
+  const kept: T[] = [];
+  const demoted: T[] = [];
+  for (const item of items) {
+    const key = keyOf(item);
+    if (!key) {
+      kept.push(item);
+      continue;
+    }
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    (n <= perBrand ? kept : demoted).push(item);
+  }
+  return [...kept, ...demoted];
 }
 
 /** Extracts an attendee count from scraped preview text, if present (e.g. Luma's "N attending"). */

@@ -11,7 +11,13 @@ import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
 import { trackedHref } from "@/lib/links";
-import { computeStructuralScore, describeFit, scoreCuratedLink } from "@/lib/scoring";
+import {
+  computeStructuralScore,
+  describeFit,
+  diversifyByBrand,
+  hostBrandKey,
+  scoreCuratedLink,
+} from "@/lib/scoring";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -132,7 +138,15 @@ export default async function Home() {
         .sort((a, b) => b.sortKey - a.sortKey)
     : [];
 
-  const recommendations = isProfileComplete ? [...hostedItems, ...linkItems] : [];
+  // Keep one host from occupying the whole top of the feed. Pure reorder of an
+  // already-scored list — see diversifyByBrand for the measured effect.
+  const diversifiedLinks = diversifyByBrand(
+    linkItems,
+    (item) => hostBrandKey({ title: item.title, description: item.description }),
+    2,
+  );
+
+  const recommendations = isProfileComplete ? [...hostedItems, ...diversifiedLinks] : [];
 
   // Stage 0: record what was surfaced, after the response is sent so it never
   // blocks render. Skip prefetches. Clicks are logged separately via /api/out.
