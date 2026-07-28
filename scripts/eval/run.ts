@@ -76,7 +76,6 @@ function profileShape(u: SynthUser) {
     bioBlurb: u.bioBlurb,
     interests: (u.interests ?? []) as never,
     tags: null,
-    resumeTextExtracted: null,
     genderIdentity: null,
   };
 }

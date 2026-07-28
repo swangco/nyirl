@@ -202,3 +202,75 @@ It also correctly flagged that recalibration carried far more risk than value
 (it silently rescales `applicantSemanticScore`, which is **persisted** on
 registrations, so pre- and post-deploy applicants would be ranked on different
 scales) — which is why it was reverted rather than shipped.
+
+## 8. The five known problems: designs, adversarial review, outcomes
+
+Each proposed fix was sent to an adversarial DESIGN reviewer *before* implementation.
+Four of five designs were rejected or replaced. That is the point of the exercise:
+every one of them would have shipped a regression or a no-op.
+
+| # | Problem | Proposed | Verdict | Shipped |
+|---|---|---|---|---|
+| 1 | Sparse profiles / job-seeker mismatch | intent line + canned type text | **rejected** | nothing (see below) |
+| 2 | Résumé swamps the profile vector | truncate 6000 → 800 | **replaced** | remove résumé entirely |
+| 3 | Own-employer events recommended | employer-name demotion | **replaced** | host-brand diversity |
+| 4 | `typeCaps` / `excludeRules` dead | share caps + refill pass | **replaced** | absolute seats, hard ceiling |
+| 5 | Applicant scores frozen | recompute + overwrite | **changed** | recompute, keep audit trail |
+
+### 1 — rejected by measurement
+The reviewer predicted the intent line would *hurt*, because the motivating case
+(a laid-off senior engineer being shown "New Grad Night") is a **seniority**
+failure, not an intent failure — cosine cannot separate "Senior engineer, 4 years
+payments" from "Your First Year as a Backend Engineer", and pushing the vector
+toward hiring vocabulary makes that worse. Measured: **P@5 −2.8pp, paired
+t = −2.45, 8 users worse vs 1 better.** Not shipped.
+
+The canned per-type text for sparse profiles is *unmeasurable* on this corpus —
+every synthetic user has a real bio — so shipping it would have been shipping
+blind. Deferred until the corpus contains genuinely sparse users.
+
+### 2 — the fix was the opposite of the proposal
+With résumés added for all 50 users, including a 6,000-char résumé measured as a
+regression (**NDCG −4.6pp, t = −2.22**), and truncating to 800 did **not** recover
+it (t = 1.37). The problem isn't length, it's that a résumé is mostly *career
+history*, which is topically different from what someone wants next. Résumé text
+was removed from the discovery vector entirely; the host's applicant screening
+still reads it directly.
+
+### 3 — wrong by construction
+An employer rule can't be right: another employee of the same company may
+legitimately want that event, `curated_links` has no host field, and a company
+name appears in speaker bios and ordinary prose. Replaced with per-host
+diversity, which fires for every user rather than only those whose employer
+hosts events. Reported honestly: **directionally positive on all three metrics,
+none clearing |t| > 2.** Applied only because its downside is one-sided.
+
+### 4 — the ceiling has to actually hold
+The reviewer broke the first design three ways: `0.15 × 6 seats` floors to zero
+(turning "about one investor" into a ban); the "never leave seats empty" refill
+pass cancelled the cap exactly when it bound (11/16 investors against a 15% cap);
+and resolving primary type against `target_types` let anyone dodge a cap by
+ticking a second box — on the live event the capped type isn't in the criteria at
+all. All three are now regression tests (`npm run test:cohort`).
+
+### 5 — premise was partly wrong
+The reviewer showed there are **zero rank inversions** in the live data, and that
+for events with `NULL criteriaWeights` the structural score is a constant 50, so
+recomputing changes nothing there. Scores are recomputed and displayed, but the
+stored values are kept as the audit trail of what the host actually saw, with
+drift surfaced as "was N".
+
+## 9. Required deploy step
+
+Removing résumé text from the profile document makes **existing production
+vectors stale** — they were built from the old text, and the default backfill
+only fills `NULL`. After this branch is deployed:
+
+```
+curl -X POST -H "authorization: Bearer $CRON_SECRET" \
+  "https://<deployment>/api/admin/embeddings?force=1"
+```
+
+Do this *after* deploy, not before: while `main` still builds documents with
+résumé text, re-embedding without it would leave the two out of sync and cause
+churn on every profile save.
