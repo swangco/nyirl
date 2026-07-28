@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
 import { trackedHref } from "@/lib/links";
+import { isProfileComplete as checkProfileComplete } from "@/lib/profile-completeness";
 import { computeStructuralScore, describeFit, scoreCuratedLink } from "@/lib/scoring";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
@@ -47,10 +48,7 @@ export default async function CategoryPage({
   const profile = await db.query.profiles.findFirst({
     where: eq(profiles.userId, session.user.id),
   });
-  const isProfileComplete =
-    !!profile?.fullName &&
-    (profile.profileType?.length ?? 0) > 0 &&
-    !!profile.bioBlurb?.trim();
+  const isProfileComplete = checkProfileComplete(profile);
 
   const now = new Date();
 
@@ -94,7 +92,7 @@ export default async function CategoryPage({
     .map((link) => {
       // With no complete profile this ranks by pure quality (CQS) — the sensible
       // default order before we know anything about the viewer.
-      const s = scoreCuratedLink(isProfileComplete ? profile : null, link, {
+      const s = scoreCuratedLink(isProfileComplete && profile ? profile : null, link, {
         profileEmbedding: profile?.embedding,
         linkEmbedding: link.embedding,
       });

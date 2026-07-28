@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
 import { trackedHref } from "@/lib/links";
+import { isProfileComplete as checkProfileComplete } from "@/lib/profile-completeness";
 import { computeStructuralScore, describeFit, scoreCuratedLink } from "@/lib/scoring";
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
@@ -42,10 +43,7 @@ export default async function Home() {
     ? await db.query.profiles.findFirst({ where: eq(profiles.userId, session.user.id) })
     : null;
 
-  const isProfileComplete =
-    !!profile?.fullName &&
-    (profile.profileType?.length ?? 0) > 0 &&
-    !!profile.bioBlurb?.trim();
+  const isProfileComplete = checkProfileComplete(profile);
 
   // Signed out — a minimal editorial landing, not the list.
   if (!session?.user?.id) {
