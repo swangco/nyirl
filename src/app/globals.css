@@ -1,14 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f9f7f1;
-  --surface: #fdfcf8;
-  --foreground: #0a0a0a;
-  --foreground-soft: #62748e;
-  --line: #e5e2d5;
-  --accent: #101828;
-  --accent-hover: #2a3444;
-  --accent-soft: #10182814;
+  --background: #F6F5F3;
+  --surface: #FDFCFA;
+  --foreground: #1F1F1F;
+  --foreground-soft: #6C6C6C;
+  --foreground-faint: #B4B2A9;
+  --line: #E0DED9;
+  --accent: #C6714C;
+  --accent-hover: #7B553A;
+  --accent-soft: #C6714C14;
+  --cream: #E9E0D4;
   /* Warm paper is intentional — pin the scheme so native controls match. */
   color-scheme: light;
 }
@@ -18,10 +20,12 @@
   --color-surface: var(--surface);
   --color-foreground: var(--foreground);
   --color-foreground-soft: var(--foreground-soft);
+  --color-foreground-faint: var(--foreground-faint);
   --color-line: var(--line);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
+  --color-cream: var(--cream);
   --font-sans: var(--font-manrope);
   --font-serif: var(--font-lora);
   --font-mono: var(--font-geist-mono);
