@@ -87,10 +87,18 @@ export async function POST(req: Request) {
     return Response.json({ error: "No OpenAI key visible to this deployment." }, { status: 400 });
   }
 
+  // `?force=1` re-embeds rows that already have a vector. Needed whenever the
+  // DOCUMENT construction changes (e.g. resume text was removed from the
+  // profile document): existing vectors were built from the old text and are
+  // silently stale, and the default NULL-only backfill can never reach them.
+  const force = new URL(req.url).searchParams.get("force") === "1";
+
   const [profileRows, linkRows, eventRows] = await Promise.all([
-    db.query.profiles.findMany({ where: isNull(profiles.embedding) }),
-    db.query.curatedLinks.findMany({ where: isNull(curatedLinks.embedding) }),
-    db.query.events.findMany({ where: isNull(events.embedding) }),
+    db.query.profiles.findMany(force ? undefined : { where: isNull(profiles.embedding) }),
+    db.query.curatedLinks.findMany(
+      force ? undefined : { where: isNull(curatedLinks.embedding) },
+    ),
+    db.query.events.findMany(force ? undefined : { where: isNull(events.embedding) }),
   ]);
 
   const [profileVecs, linkVecs, eventVecs] = await Promise.all([
@@ -103,7 +111,12 @@ export async function POST(req: Request) {
   for (let i = 0; i < profileRows.length; i++) {
     const v = profileVecs[i];
     if (!v) continue;
-    await db.update(profiles).set({ embedding: v }).where(eq(profiles.id, profileRows[i].id));
+    // Record the document alongside the vector, so saveProfile's
+    // skip-if-unchanged check has an accurate reference point afterwards.
+    await db
+      .update(profiles)
+      .set({ embedding: v, embeddingDocument: buildProfileDocument(profileRows[i]) })
+      .where(eq(profiles.id, profileRows[i].id));
     embeddedProfiles++;
   }
 

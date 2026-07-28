@@ -97,6 +97,44 @@ export function meanMetrics(all: Metrics[]): Metrics {
   };
 }
 
+/**
+ * Paired comparison between two variants measured on the SAME users.
+ *
+ * Averages alone are misleading at n=50: the calibration retune looked like a
+ * clear win on means and turned out to be t=0.50, i.e. noise. Pairing removes
+ * between-user variance (some people are simply easier to match than others),
+ * so the test is on the per-user delta. The bar used in this repo is |t| > 2.
+ */
+export function paired(
+  a: Metrics[],
+  b: Metrics[],
+  key: keyof Metrics,
+): { meanDelta: number; se: number; t: number; nBetter: number; nWorse: number } {
+  const n = Math.min(a.length, b.length);
+  if (n === 0) return { meanDelta: 0, se: 0, t: 0, nBetter: 0, nWorse: 0 };
+  const d: number[] = [];
+  let nBetter = 0;
+  let nWorse = 0;
+  for (let i = 0; i < n; i++) {
+    const delta = b[i][key] - a[i][key];
+    d.push(delta);
+    if (delta > 0) nBetter++;
+    else if (delta < 0) nWorse++;
+  }
+  const mean = d.reduce((s, x) => s + x, 0) / n;
+  const variance = n > 1 ? d.reduce((s, x) => s + (x - mean) ** 2, 0) / (n - 1) : 0;
+  const se = Math.sqrt(variance / n);
+  return { meanDelta: mean, se, t: se === 0 ? 0 : mean / se, nBetter, nWorse };
+}
+
+export function formatPaired(
+  label: string,
+  p: { meanDelta: number; se: number; t: number; nBetter: number; nWorse: number },
+): string {
+  const verdict = Math.abs(p.t) > 2 ? (p.meanDelta > 0 ? "SHIP" : "REGRESSION") : "noise";
+  return `${label.padEnd(34)} Δ=${(p.meanDelta * 100).toFixed(1).padStart(6)}pp  SE=${(p.se * 100).toFixed(1).padStart(4)}  t=${p.t.toFixed(2).padStart(6)}  +${p.nBetter}/-${p.nWorse}  ${verdict}`;
+}
+
 export function formatRow(label: string, m: Metrics): string {
   const pct = (x: number) => (x * 100).toFixed(1).padStart(5);
   return `${label.padEnd(30)} ${pct(m.p5)} ${pct(m.p10)} ${pct(m.recall10)} ${pct(m.ndcg10)} ${pct(m.mrr)} ${pct(m.fp10)}`;

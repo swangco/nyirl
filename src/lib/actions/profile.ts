@@ -113,10 +113,12 @@ export async function saveProfile(formData: FormData) {
     where: eq(profiles.userId, userId),
   });
 
-  // Semantic-matching vector over the profile document. Uses the freshly
-  // uploaded resume text if present, else whatever was previously extracted.
-  // Returns null when OPENAI_API_KEY is unset — in that case we leave any
-  // existing embedding untouched rather than wiping it.
+  // Semantic-matching vector over the profile document. Resume text is
+  // deliberately not part of it (see buildProfileDocument — including it
+  // measured as a ranking regression); the resume is still stored and is read
+  // directly by the host's applicant screening. Returns null when no OpenAI key
+  // is visible, in which case any existing embedding is left untouched rather
+  // than wiped.
   const nextDocument = buildProfileDocument({
     fullName,
     title: title || null,
@@ -125,7 +127,6 @@ export async function saveProfile(formData: FormData) {
     bioBlurb: bioBlurb || null,
     interests,
     tags: existing?.tags ?? null,
-    resumeTextExtracted: resumeTextExtracted ?? existing?.resumeTextExtracted ?? null,
   });
 
   // Only pay for an embedding when the embedded TEXT actually changed. Most
