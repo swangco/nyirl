@@ -14,8 +14,6 @@ import { trackedHref } from "@/lib/links";
 import {
   computeStructuralScore,
   describeFit,
-  diversifyByBrand,
-  hostBrandKey,
   scoreCuratedLink,
 } from "@/lib/scoring";
 
@@ -138,15 +136,21 @@ export default async function Home() {
         .sort((a, b) => b.sortKey - a.sortKey)
     : [];
 
-  // Keep one host from occupying the whole top of the feed. Pure reorder of an
-  // already-scored list — see diversifyByBrand for the measured effect.
-  const diversifiedLinks = diversifyByBrand(
-    linkItems,
-    (item) => hostBrandKey({ title: item.title, description: item.description }),
-    2,
-  );
-
-  const recommendations = isProfileComplete ? [...hostedItems, ...diversifiedLinks] : [];
+  // Host diversity is NOT applied. It was shipped on the argument that its
+  // downside was one-sided (it never clears |t| > 2 on the eval, but a pure
+  // reorder can't hurt much). Adversarial review falsified that on the live
+  // 41-link corpus: `curated_links` has no host column, so the key is inferred
+  // from title/description text, and the inference collides. Three unrelated
+  // listings key to "community" ("VC Community Happy Hour", "n8n NYC Community
+  // Meetup", "Community Week NYC"), pushing the third below an item with an
+  // IDENTICAL score; a demo night keys to "vercel" only because Vercel is named
+  // in the copy; and TIER_ONE_HOSTS contains the ordinary English words
+  // "primary", "gamma", "modal", "sierra" and "runway".
+  //
+  // Weak evidence for + demonstrated harm against = don't ship. Revisit when
+  // curated_links carries a real host id; diversifyByBrand and its tests stay
+  // in place for that.
+  const recommendations = isProfileComplete ? [...hostedItems, ...linkItems] : [];
 
   // Stage 0: record what was surfaced, after the response is sent so it never
   // blocks render. Skip prefetches. Clicks are logged separately via /api/out.

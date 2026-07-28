@@ -64,6 +64,59 @@ config({ path: ".env.local" });
     c.resolvePrimaryType(["founder","operator"],{operator:0.25})==="operator",
     c.resolvePrimaryType(["founder","operator"],{operator:0.25}));
 
+  console.log("review round 2: exclude flags must not fire on the target audience");
+  const RULES=["recruiter","service or sales pitch","not currently building a company"];
+  const noFlags=(p:Record<string,unknown>,label:string)=>{
+    const f=c.flagExcludeRules(p as never,RULES);
+    t(label,f.length===0,JSON.stringify(f));
+  };
+  noFlags({title:"Co-founder & CEO",company:"Acme",bioBlurb:"Building an AI infra startup. Currently seeking a technical co-founder and seed investors.",profileType:["founder"]},
+    "founder seeking a co-founder is not job seeking");
+  noFlags({title:"Partner",company:"First Round",bioBlurb:"I invest in seed-stage AI.",profileType:["investor"]},
+    "investor not flagged (caps reserve seats for them)");
+  noFlags({title:"Co-founder",company:"Acme",bioBlurb:"We are recruiting our founding engineer.",profileType:["founder"]},
+    "founder who recruits is not a recruiter");
+  noFlags({title:"Co-founder",company:"Acme",bioBlurb:"Building an AI copilot for sales teams",profileType:["founder"]},
+    "selling to sales teams is not a sales pitch");
+  const stillCaught=[
+    [{title:"Technical Recruiter",company:"X",bioBlurb:"I hire engineers",profileType:["other"]},"recruiter by title"],
+    [{title:"VP of Sales",company:"Stripe",bioBlurb:"",profileType:["operator"]},"VP of Sales by title"],
+    [{title:"Engineer",company:"",bioBlurb:"Open to work after a layoff.",profileType:["engineer"]},"explicit open to work"],
+    [{title:"Engineer",company:"",bioBlurb:"",profileType:["job_seeking"]},"self-declared job seeking"],
+  ] as const;
+  for (const [p,label] of stillCaught) {
+    const f=c.flagExcludeRules(p as never,RULES);
+    t(`still flags: ${label}`,f.length>0,JSON.stringify(f));
+  }
+
+  console.log("review round 2: cap resolution independent of JSON key order");
+  const a1=c.resolvePrimaryType(["founder","investor"],{founder:1.0,investor:0.15});
+  const a2=c.resolvePrimaryType(["founder","investor"],{investor:0.15,founder:1.0});
+  t("most-binding cap wins either way",a1==="investor"&&a2==="investor",`${a1} / ${a2}`);
+
+  console.log("review round 2: a cap of 0 means none");
+  t("seatsForCap(0,16)===0",c.seatsForCap(0,16)===0,`${c.seatsForCap(0,16)}`);
+
+  console.log("review round 2: no capacity means no cap enforcement");
+  const uncapped=c.selectCohort([...Array(10)].map((_,i)=>({registrationId:`i${i}`,primaryType:"investor",score:100-i})),
+    {capacity:null,caps:{investor:0.15}});
+  t("nobody capped out of an unlimited room",uncapped.cappedOut.length===0&&uncapped.admit.length===10,
+    `admit=${uncapped.admit.length} capped=${uncapped.cappedOut.length}`);
+
+  console.log("review round 2: decisions free and hold seats");
+  const withStatus=[
+    {registrationId:"declined-hi",primaryType:"investor",score:99,status:"declined"},
+    {registrationId:"declined-hi2",primaryType:"investor",score:98,status:"declined"},
+    {registrationId:"pending-lo",primaryType:"investor",score:10,status:"pending"},
+  ];
+  const r2=c.selectCohort(withStatus,{capacity:16,caps:{investor:0.15}});
+  t("declining two investors frees the investor cap",r2.admit.includes("pending-lo"),JSON.stringify(r2.admit));
+  const held=c.selectCohort([
+    {registrationId:"approved-lo",primaryType:"founder",score:1,status:"approved"},
+    {registrationId:"pending-hi",primaryType:"founder",score:99,status:"pending"},
+  ],{capacity:1,caps:null});
+  t("an approved applicant keeps their seat",held.admit[0]==="approved-lo",JSON.stringify(held.admit));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail?1:0);
 })();

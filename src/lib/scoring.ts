@@ -555,12 +555,19 @@ export function computeKeywordFit(
  *    output is PERSISTED on registrations at apply time. Shifting it silently
  *    re-scales stored scores, so applicants from before and after a deploy get
  *    ranked against each other on two different scales.
- *  - The fitted band came from synthetic profiles with no resume text, while
- *    production embeds up to 6k chars of resume. Those corpora have different
- *    cosine distributions, so the percentiles don't transfer.
+ *  - Stability. The band is what makes a score comparable across time; a
+ *    retune with no click data to validate it against is a guess with a large
+ *    blast radius.
  *
- * TODO(stage-2): re-derive from the LIVE corpus (with resumes) on a schedule,
- * and re-base persisted applicant scores in the same migration.
+ * The corpus-mismatch argument that used to sit here is GONE: it said the
+ * fitted band came from synthetic profiles with no resume text while production
+ * embedded 6k chars of resume, so the percentiles wouldn't transfer.
+ * buildProfileDocument no longer includes resume text, so once the force
+ * re-embed has run the live and eval corpora agree and that objection is moot.
+ *
+ * TODO(stage-2): re-derive from the LIVE corpus once there is real engagement
+ * data to validate against, and re-base persisted applicant scores in the same
+ * migration.
  */
 const COSINE_FLOOR = 0.15;
 const COSINE_CEIL = 0.55;

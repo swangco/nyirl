@@ -98,17 +98,27 @@ async function main() {
   const proxyBase = process.env.EMBED_PROXY;
   const proxySecret = process.env.CRON_SECRET;
   const useProxy = !localKey && !!proxyBase && !!proxySecret;
-  if (!localKey && !useProxy) {
-    console.error(
-      "No OPENAI_API_KEY locally and no EMBED_PROXY/CRON_SECRET set.\n" +
-        "Either add the key to .env.local, or run:\n" +
-        "  EMBED_PROXY=https://<deployment> CRON_SECRET=<secret> npx tsx scripts/eval/run.ts",
-    );
-    process.exit(1);
-  }
-  console.log(useProxy ? `embedding via proxy: ${proxyBase}` : "embedding with local key");
+  const canEmbed = !!localKey || useProxy;
+  // Deliberately NOT a hard exit. The point of the content-addressed cache is
+  // that re-running against changed SCORING logic costs nothing — so demanding
+  // credentials up front made a $0 re-run impossible without them. Fail only if
+  // something genuinely needs fetching.
+  console.log(
+    canEmbed
+      ? useProxy
+        ? `embedding via proxy: ${proxyBase}`
+        : "embedding with local key"
+      : "no credentials — cache-only run (fails only if a document is uncached)",
+  );
 
   async function embedChunk(values: string[]): Promise<number[][]> {
+    if (!canEmbed) {
+      throw new Error(
+        `${values.length} document(s) are not cached and there is no way to embed them.\n` +
+          "Add OPENAI_API_KEY to .env.local, or run:\n" +
+          "  EMBED_PROXY=https://<deployment> CRON_SECRET=<secret> npx tsx scripts/eval/run.ts",
+      );
+    }
     if (!useProxy) {
       const { embeddings } = await embedMany({
         model,

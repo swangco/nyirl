@@ -15,6 +15,10 @@ import type { events, profiles, registrations } from "@/db/schema";
  *    investor" into "no investors at all". Seats are rounded, and any cap the
  *    host wrote at all is guaranteed at least one seat.
  *
+ *  - Caps require a CAPACITY. A share is meaningless without a denominator, so
+ *    an event with no capacity enforces no caps at all rather than binding
+ *    against the live applicant count, which would move under the host's feet.
+ *
  *  - A cap is a CEILING and it HOLDS. An earlier design filled leftover seats
  *    ignoring caps so as never to waste capacity; that cancels the constraint
  *    exactly when it binds (25 investors for 16 seats would end up 11 investors
@@ -75,16 +79,25 @@ export function resolvePrimaryType(
 ): string {
   const types = profileType ?? [];
   if (caps) {
-    for (const capped of Object.keys(caps)) {
-      if (types.includes(capped)) return capped;
-    }
+    // MOST BINDING cap wins, not the first key in the JSON. Iterating insertion
+    // order made the answer depend on the byte order the host happened to type
+    // type_caps in: {"founder":1.0,"investor":0.15} and {"investor":0.15,
+    // "founder":1.0} gave different answers for the same person, and on the
+    // live event an investor+operator applicant always burned an investor seat
+    // purely because "investor" was written first.
+    const capped = types
+      .filter((t) => t in caps)
+      .sort((a, b) => caps[a]! - caps[b]! || a.localeCompare(b));
+    if (capped.length) return capped[0]!;
   }
   return types.find((t) => t !== "other") ?? types[0] ?? "other";
 }
 
-/** Absolute seat allowance for a capped type. Any cap the host wrote gets at
- * least one seat — a cap means "few", never "none". */
+/** Absolute seat allowance for a capped type. Any NON-ZERO cap gets at least
+ * one seat — such a cap means "few", never "none" — but an explicit 0 means
+ * exactly that, so it must not be rounded up into an admission. */
 export function seatsForCap(share: number, capacity: number): number {
+  if (share <= 0) return 0;
   return Math.max(1, Math.round(share * capacity));
 }
 
@@ -92,7 +105,13 @@ export type CohortInput = {
   registrationId: string;
   primaryType: string;
   score: number;
+  /** Decisions already made. `declined` frees the seat; `approved`/`attended`
+   * hold theirs regardless of score, because the host already said yes. */
+  status?: string;
 };
+
+const LOCKED_IN = new Set(["approved", "attended"]);
+const RELEASED = new Set(["declined"]);
 
 export type CohortResult = {
   admit: string[];
@@ -113,24 +132,41 @@ export function selectCohort(
   applicants: CohortInput[],
   opts: { capacity: number | null; caps: TypeCaps | null },
 ): CohortResult {
-  const capacity = opts.capacity ?? applicants.length;
-  const ranked = [...applicants].sort(
-    (a, b) => b.score - a.score || a.registrationId.localeCompare(b.registrationId),
-  );
+  // Declined applicants release their seat; without this, declining the two
+  // highest-scoring investors would permanently badge every later investor
+  // "capped out" for seats nobody occupies.
+  const live = applicants.filter((a) => !RELEASED.has(a.status ?? ""));
+  const capacity = opts.capacity ?? live.length;
 
+  // A share cap needs a denominator. With no capacity there isn't one, and
+  // using the applicant count makes the cap bind against a room that has no
+  // seat limit — 8 of 10 applicants told they are "capped out" of an unlimited
+  // room, and a "/ N cap" chip that moves every time someone applies.
   const seats: Record<string, number> = {};
-  if (opts.caps) {
+  if (opts.caps && opts.capacity != null) {
     for (const [type, share] of Object.entries(opts.caps)) {
-      seats[type] = seatsForCap(share, capacity);
+      seats[type] = seatsForCap(share, opts.capacity);
     }
   }
+
+  // Already-approved people keep their seat regardless of rank; only undecided
+  // applicants compete for what's left.
+  const byRank = (a: CohortInput, b: CohortInput) =>
+    b.score - a.score || a.registrationId.localeCompare(b.registrationId);
+  const locked = live.filter((a) => LOCKED_IN.has(a.status ?? "")).sort(byRank);
+  const contending = live.filter((a) => !LOCKED_IN.has(a.status ?? "")).sort(byRank);
 
   const admit: string[] = [];
   const cappedOut: string[] = [];
   const overflow: string[] = [];
   const admittedByType: Record<string, number> = {};
 
-  for (const a of ranked) {
+  for (const a of locked) {
+    admit.push(a.registrationId);
+    admittedByType[a.primaryType] = (admittedByType[a.primaryType] ?? 0) + 1;
+  }
+
+  for (const a of contending) {
     if (admit.length >= capacity) {
       overflow.push(a.registrationId);
       continue;
@@ -188,10 +224,40 @@ export function composition(
  * Returns the rules that appear to be hit, with the evidence that triggered
  * them, so the host sees WHY rather than an opaque badge. Never decides.
  */
-const RULE_SIGNALS: { match: RegExp; test: RegExp }[] = [
-  { match: /recruit|talent|staffing|headhunt/i, test: /recruit|talent acquisition|staffing|headhunter|sourcer/i },
-  { match: /sales|pitch|service|vendor|agency/i, test: /account executive|sales|business development|bizdev|agency|consultanc|freelance/i },
-  { match: /not currently building|building a company|founder/i, test: /open to work|seeking|looking for a role|job seeking/i },
+/**
+ * `scope` is the whole design. Matching role words anywhere in a profile is
+ * what produces the false positives that make a flag worthless:
+ *
+ *   "We're recruiting our founding engineer"      -> flagged as a recruiter
+ *   "Building an AI copilot for sales teams"      -> flagged as a sales pitch
+ *   "seeking a technical co-founder and seed investors"
+ *                                                 -> flagged as not building
+ *
+ * All three are the target audience, not the excluded audience. What separates
+ * a recruiter from a founder who recruits is that the recruiter's JOB TITLE says
+ * so — so role rules read title/company only. Only genuinely self-declared
+ * intent ("open to work") is allowed to match free-text bio.
+ */
+const RULE_SIGNALS: { match: RegExp; test: RegExp; scope: "role" | "any" }[] = [
+  {
+    match: /recruit|talent|staffing|headhunt/i,
+    test: /\b(recruiter|recruiting (manager|lead|partner)|talent acquisition|talent partner|staffing|headhunter|sourcer)\b/i,
+    scope: "role",
+  },
+  {
+    match: /sales|pitch|service|vendor|agency/i,
+    test: /\b(account executive|sales (rep|representative|manager|director|lead)|vp,? of sales|head of sales|business development (rep|manager|director)|bizdev|sdr|bdr)\b/i,
+    scope: "role",
+  },
+  {
+    // Only an explicit, self-declared job search counts. The ABSENCE of a
+    // founder tag is not evidence of anything — the live event's own typeCaps
+    // reserve seats for investors and operators, so flagging every non-founder
+    // put the caps UI and the flag UI in direct contradiction on one screen.
+    match: /not currently building|building a company|founder/i,
+    test: /\b(open to work|#opentowork|looking for (a|my next) role|seeking (a|my) (new )?(role|position|job)|job.?seeking|recently laid off|between roles)\b/i,
+    scope: "any",
+  },
 ];
 
 export function flagExcludeRules(
@@ -199,23 +265,23 @@ export function flagExcludeRules(
   rules: string[],
 ): { rule: string; evidence: string }[] {
   if (!profile || rules.length === 0) return [];
-  const haystack = [profile.title, profile.company, profile.bioBlurb]
-    .filter(Boolean)
-    .join(" · ");
+  const role = [profile.title, profile.company].filter(Boolean).join(" · ");
+  const all = [profile.title, profile.company, profile.bioBlurb].filter(Boolean).join(" · ");
+  const jobSeeking = (profile.profileType ?? []).includes("job_seeking");
   const hits: { rule: string; evidence: string }[] = [];
 
   for (const rule of rules) {
     for (const signal of RULE_SIGNALS) {
       if (!signal.match.test(rule)) continue;
-      const m = haystack.match(signal.test);
+      const m = (signal.scope === "role" ? role : all).match(signal.test);
       if (m) {
         hits.push({ rule, evidence: m[0] });
         break;
       }
-      // The "not currently building a company" rule is also satisfied
-      // structurally: no founder type declared.
-      if (/not currently building/i.test(rule) && !(profile.profileType ?? []).includes("founder")) {
-        hits.push({ rule, evidence: "profile does not list founder" });
+      // Self-declared on the profile itself, which is not free text and so
+      // carries no ambiguity.
+      if (signal.scope === "any" && jobSeeking) {
+        hits.push({ rule, evidence: "profile is marked job seeking" });
         break;
       }
     }
@@ -245,6 +311,7 @@ export function reviewApplicants(
       registrationId: r.registration.id,
       primaryType: resolvePrimaryType(r.profile?.profileType ?? null, caps),
       score: scoreOf(r),
+      status: r.registration.status,
     })),
     { capacity: event.capacity, caps },
   );
