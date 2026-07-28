@@ -160,18 +160,24 @@ export function selectCohort(
 }
 
 /**
- * Counts each applicant ONCE, by primary type. The host dashboard previously
- * incremented a counter per selected profileType, so a single applicant who
- * ticked five boxes added one to five different tallies — the room summary the
- * host reads was arithmetically wrong.
+ * Counts each applicant ONCE, by their own DECLARED primary type. The host
+ * dashboard previously incremented a counter per selected profileType, so a
+ * single applicant who ticked five boxes added one to five different tallies —
+ * the room summary the host reads was arithmetically wrong.
+ *
+ * Deliberately does NOT resolve against the caps. "Which bucket does this person
+ * spend a seat from" and "what is this room made of" are different questions,
+ * and answering the second with the first mislabels people: on the live event a
+ * founder who also ticked "operator" was reported as "1 operator, 0 founders"
+ * purely because operator happened to be the capped type. Cap consumption is
+ * reported separately, by `selectCohort`'s `byType`.
  */
 export function composition(
   applicants: { profileType: string[] | null }[],
-  caps: TypeCaps | null,
 ): Record<string, number> {
   const out: Record<string, number> = {};
   for (const a of applicants) {
-    const t = resolvePrimaryType(a.profileType, caps);
+    const t = resolvePrimaryType(a.profileType, null);
     out[t] = (out[t] ?? 0) + 1;
   }
   return out;

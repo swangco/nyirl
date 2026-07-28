@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { PageShell } from "@/components/page-shell";
 import { StatusPill } from "@/components/status-pill";
 import { generateApplicantRationale, updateRegistrationStatus } from "@/lib/actions/host";
-import { composition, parseTypeCaps, reviewApplicants } from "@/lib/cohort";
+import { composition, reviewApplicants } from "@/lib/cohort";
 import { scoreRegistration } from "@/lib/scoring";
 
 const decideButton = "rounded-full px-4 py-2 text-sm font-medium transition-colors";
@@ -73,13 +73,11 @@ export default async function HostDashboardPage({
       a.id.localeCompare(b.id),
   );
 
-  // Counts each applicant ONCE by primary type. The previous version added 1
-  // to a counter per selected profileType, so one applicant who ticked five
-  // boxes was counted five times and the room summary was simply wrong.
-  const caps = parseTypeCaps(event.typeCaps);
+  // Counts each applicant ONCE by their declared primary type. The previous
+  // version added 1 to a counter per selected profileType, so one applicant who
+  // ticked five boxes was counted five times and the room summary was wrong.
   const typeCounts = composition(
     regs.map((r) => ({ profileType: r.user.profile?.profileType ?? null })),
-    caps,
   );
 
   // Activates events.typeCaps / events.excludeRules, which have had real
@@ -90,6 +88,9 @@ export default async function HostDashboardPage({
     regs.map((r) => ({ registration: r, profile: r.user.profile ?? null })),
     (r) => shownScore(r.registration.id, r.registration.compositeScore),
   );
+  const cappedTypes = Object.entries(review.cohort.byType)
+    .filter((e): e is [string, { admitted: number; seats: number }] => e[1].seats != null)
+    .sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
     <PageShell width="wide">
@@ -101,21 +102,48 @@ export default async function HostDashboardPage({
         }`}
       />
 
-      {Object.keys(typeCounts).length > 0 && (
-        <div className="mb-8 flex flex-wrap gap-2 text-xs">
-          {Object.entries(typeCounts).map(([type, count]) => (
-            <span
-              key={type}
-              className="rounded-full border border-line bg-surface px-3 py-1 text-foreground-soft"
-            >
-              {count} {type}
-              {review.cohort.byType[type]?.seats != null && (
-                <span className="ml-1 text-foreground-soft/60">
-                  / {review.cohort.byType[type]!.seats} cap
+      {(Object.keys(typeCounts).length > 0 || cappedTypes.length > 0) && (
+        <div className="mb-8 flex flex-col gap-2 text-xs">
+          {Object.keys(typeCounts).length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-foreground-soft/60">Room</span>
+              {Object.entries(typeCounts).map(([type, count]) => (
+                <span
+                  key={type}
+                  className="rounded-full border border-line bg-surface px-3 py-1 text-foreground-soft"
+                >
+                  {count} {type.replace(/_/g, " ")}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* Cap usage is a separate reading: an applicant spends a seat from a
+              capped type if they declared it, which is not necessarily the type
+              they lead with above. Conflating the two mislabels people. */}
+          {cappedTypes.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-foreground-soft/60">Caps</span>
+              {cappedTypes.map(([type, { admitted, seats }]) => (
+                <span
+                  key={type}
+                  className={`rounded-full border px-3 py-1 ${
+                    admitted >= seats
+                      ? "border-line bg-surface text-foreground-soft/60"
+                      : "border-line bg-surface text-foreground-soft"
+                  }`}
+                >
+                  {type.replace(/_/g, " ")} {admitted}/{seats}
+                  {admitted >= seats && <span className="ml-1">full</span>}
+                </span>
+              ))}
+              {review.cohort.unusedSeats > 0 && event.capacity != null && (
+                <span className="text-foreground-soft/60">
+                  {review.cohort.unusedSeats} seat
+                  {review.cohort.unusedSeats === 1 ? "" : "s"} unfilled
                 </span>
               )}
-            </span>
-          ))}
+            </div>
+          )}
         </div>
       )}
 

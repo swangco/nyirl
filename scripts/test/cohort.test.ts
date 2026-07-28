@@ -29,7 +29,7 @@ config({ path: ".env.local" });
   t("resolves to the CAPPED type",primary==="investor",`got ${primary}`);
 
   console.log("critic case 4: composition counts each person once");
-  const comp=c.composition([{profileType:["founder","investor","engineer","job_seeking","other"]}],null);
+  const comp=c.composition([{profileType:["founder","investor","engineer","job_seeking","other"]}]);
   const total=Object.values(comp).reduce((a,b)=>a+b,0);
   t("one applicant contributes 1, not 5",total===1,`total=${total}`);
 
@@ -52,6 +52,17 @@ config({ path: ".env.local" });
     (r)=>live[(r.registration as {id:string}).id]);
   t("stored-score default still admits a",stale.cohort.admit[0]==="a",`got ${stale.cohort.admit[0]}`);
   t("displayed-score override admits b",fresh.cohort.admit[0]==="b",`got ${fresh.cohort.admit[0]}`);
+
+  console.log("room mix labels people by what they declared, not by what is capped");
+  // Live case: a founder who also ticked "operator" was reported as "1 operator,
+  // 0 founders" only because operator happened to be the capped type.
+  const mix=c.composition([{profileType:["founder","operator","marketing_gtm"]},{profileType:["founder"]}]);
+  t("both read as founders",mix.founder===2&&mix.operator===undefined,JSON.stringify(mix));
+  // ...but she still SPENDS a seat from the operator cap, so ticking a second
+  // box cannot dodge it.
+  t("still counts against the operator cap",
+    c.resolvePrimaryType(["founder","operator"],{operator:0.25})==="operator",
+    c.resolvePrimaryType(["founder","operator"],{operator:0.25}));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail?1:0);
