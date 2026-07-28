@@ -217,10 +217,20 @@ export function flagExcludeRules(
   return hits;
 }
 
-/** Convenience wrapper for a host dashboard row. */
+/**
+ * Convenience wrapper for a host dashboard row.
+ *
+ * `scoreOf` exists because the stored `compositeScore` is an audit trail of what
+ * the host saw at apply time, not the current score. The dashboard renders the
+ * recomputed score, so selection must run on the SAME number the host is looking
+ * at — otherwise a row can read 78 while being capped out behind a row reading
+ * 64, and the "would admit" pill silently contradicts the numbers beside it.
+ */
 export function reviewApplicants(
   event: Pick<Event, "capacity" | "typeCaps" | "excludeRules">,
   rows: { registration: Registration; profile: Profile | null }[],
+  scoreOf: (row: { registration: Registration; profile: Profile | null }) => number = (r) =>
+    r.registration.compositeScore ?? 0,
 ) {
   const caps = parseTypeCaps(event.typeCaps);
   const rules = parseExcludeRules(event.excludeRules);
@@ -228,7 +238,7 @@ export function reviewApplicants(
     rows.map((r) => ({
       registrationId: r.registration.id,
       primaryType: resolvePrimaryType(r.profile?.profileType ?? null, caps),
-      score: r.registration.compositeScore ?? 0,
+      score: scoreOf(r),
     })),
     { capacity: event.capacity, caps },
   );

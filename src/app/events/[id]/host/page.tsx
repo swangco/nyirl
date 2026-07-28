@@ -41,11 +41,37 @@ export default async function HostDashboardPage({
     );
   }
 
-  const regs = await db.query.registrations.findMany({
+  const rows = await db.query.registrations.findMany({
     where: eq(registrations.eventId, id),
     orderBy: [desc(registrations.compositeScore)],
     with: { user: { with: { profile: true } } },
   });
+
+  // Stored scores are an audit trail of what was shown at decision time; they
+  // are never refreshed, so recompute alongside them and surface any drift.
+  const liveScores = new Map(
+    rows.map((r) => [
+      r.id,
+      r.user.profile
+        ? scoreRegistration(
+            { ...r.user.profile, embedding: r.user.profile.embedding },
+            { criteriaWeights: event.criteriaWeights, tags: event.tags, embedding: event.embedding },
+          )
+        : null,
+    ]),
+  );
+  const shownScore = (regId: string, stored: number | null) =>
+    liveScores.get(regId)?.composite ?? stored ?? 0;
+
+  // Rank on the number the host is actually shown. The SQL ordering is by the
+  // STORED score, so as soon as a profile or event changes, the list renders
+  // visibly out of order (72, 68, 80). Re-sort here; id breaks ties so two
+  // renders never disagree.
+  const regs = [...rows].sort(
+    (a, b) =>
+      shownScore(b.id, b.compositeScore) - shownScore(a.id, a.compositeScore) ||
+      a.id.localeCompare(b.id),
+  );
 
   // Counts each applicant ONCE by primary type. The previous version added 1
   // to a counter per selected profileType, so one applicant who ticked five
@@ -57,21 +83,12 @@ export default async function HostDashboardPage({
   );
 
   // Activates events.typeCaps / events.excludeRules, which have had real
-  // host-authored values in the database while being read by nothing.
-  const review = reviewApplicants(event, regs.map((r) => ({ registration: r, profile: r.user.profile ?? null })));
-
-  // Stored scores are an audit trail of what was shown at decision time; they
-  // are never refreshed, so recompute alongside them and surface any drift.
-  const liveScores = new Map(
-    regs.map((r) => [
-      r.id,
-      r.user.profile
-        ? scoreRegistration(
-            { ...r.user.profile, embedding: r.user.profile.embedding },
-            { criteriaWeights: event.criteriaWeights, tags: event.tags, embedding: event.embedding },
-          )
-        : null,
-    ]),
+  // host-authored values in the database while being read by nothing. Selection
+  // runs on the displayed score for the same reason the list is re-sorted above.
+  const review = reviewApplicants(
+    event,
+    regs.map((r) => ({ registration: r, profile: r.user.profile ?? null })),
+    (r) => shownScore(r.registration.id, r.registration.compositeScore),
   );
 
   return (

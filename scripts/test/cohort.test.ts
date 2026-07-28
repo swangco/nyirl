@@ -41,6 +41,18 @@ config({ path: ".env.local" });
     ["recruiter","not currently building a company"]);
   t("genuine founder not flagged",clean.length===0,`flags=${clean.length}`);
 
+  console.log("selection ranks on the DISPLAYED score, not the stale stored one");
+  // Stored order says A wins; the live recompute says B does. The dashboard
+  // shows the live number, so the single admitted seat must go to B.
+  const reg=(id:string,stored:number)=>({registration:{id,compositeScore:stored} as never,profile:{profileType:["founder"]} as never});
+  const rowsIn=[reg("a",90),reg("b",10)];
+  const live:Record<string,number>={a:10,b:90};
+  const stale=c.reviewApplicants({capacity:1,typeCaps:null,excludeRules:null} as never,rowsIn);
+  const fresh=c.reviewApplicants({capacity:1,typeCaps:null,excludeRules:null} as never,rowsIn,
+    (r)=>live[(r.registration as {id:string}).id]);
+  t("stored-score default still admits a",stale.cohort.admit[0]==="a",`got ${stale.cohort.admit[0]}`);
+  t("displayed-score override admits b",fresh.cohort.admit[0]==="b",`got ${fresh.cohort.admit[0]}`);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail?1:0);
 })();
