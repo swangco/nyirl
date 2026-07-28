@@ -256,12 +256,18 @@ export function applicantSemanticScore(
  * Measured P@5 by relevance weight: 0.6 -> 30.4, 0.7 -> 37.2, 0.8 -> 43.2,
  * 0.9 -> 44.8, 1.0 -> 46.0.
  *
- * Stopping at 0.8 rather than 1.0 is deliberate. Pure relevance scores highest
- * on precision but also has the worst false-positive rate (FP@10 4.8 vs 4.0),
- * and the judges were asked to rank *personal* fit — they were never told to
- * value host prestige or intimacy, which is exactly what CQS encodes and what
- * this product's curation thesis rests on. 0.8 captures ~94% of the achievable
- * precision gain while keeping a real quality prior in the ranking.
+ * Stopping at 0.8 rather than 1.0 is deliberate. 0.8 captures ~82% of the
+ * achievable precision gain — (43.2-30.4)/(46.0-30.4) — while keeping a real
+ * quality prior in the ranking, and pure relevance has the worst false-positive
+ * rate in the sweep (FP@10 4.8 at w=1.0 vs 4.0 at w=0.8). The judges were asked
+ * to rank *personal* fit and were never told to value host prestige, exclusivity
+ * or intimacy, which is exactly what CQS encodes and what this product's
+ * curation thesis rests on — so the eval structurally under-credits quality and
+ * the true optimum is very unlikely to be w=1.0.
+ *
+ * Honest cost: against the scorer this replaces, FP@10 rises 3.0 -> 3.8. That is
+ * ~0.4 judge-flagged-irrelevant items per 10 shown, bought for a 54% relative
+ * precision gain. Worth re-examining once real click data exists.
  */
 const RELEVANCE_WEIGHT = 0.8;
 const QUALITY_WEIGHT = 0.2;
@@ -421,23 +427,28 @@ export function computeKeywordFit(
 /**
  * Maps a cosine similarity to a 0-100 relevance score.
  *
- * The band is MEASURED, not guessed. Across 10,000 profile x event pairs
- * (scripts/eval, 50 users x 200 events) the observed cosine distribution was
- * p05 0.206, p50 0.319, p95 0.441, p99 0.504 — and the same shape appears in
- * live production data. The previous 0.15/0.55 guess put the ceiling above the
- * 99th percentile, so nothing ever scored near 100: the median match landed at
- * 42 and the single best item for a user often read as "Fair fit".
+ * DELIBERATELY LEFT AT 0.15/0.55. The offline evaluation measured the observed
+ * band (p05 0.206, p50 0.319, p99 0.504) and a tighter 0.20/0.50 mapping looked
+ * like an obvious improvement — but a paired ablation on the same 50 users found
+ * it worth +0.008 P@5 with SE 0.016 (t = 0.50), i.e. indistinguishable from
+ * noise. Essentially all of the measured gain came from the relevance/quality
+ * weight, not from the band.
  *
- * Anchoring floor/ceiling to p05/p99 spreads real matches across the full scale,
- * which matters because relevance is *linearly blended* with quality and because
- * absolute thresholds (the digest bar, describeFit's tiers) sit on top of it —
- * a monotone rescale alone would not change a pure-cosine ordering.
+ * Two reasons that makes retuning actively harmful here:
+ *  - Blast radius. This mapping sits underneath absolute thresholds (the digest
+ *    bar, describeFit's tiers) and underneath applicantSemanticScore, whose
+ *    output is PERSISTED on registrations at apply time. Shifting it silently
+ *    re-scales stored scores, so applicants from before and after a deploy get
+ *    ranked against each other on two different scales.
+ *  - The fitted band came from synthetic profiles with no resume text, while
+ *    production embeds up to 6k chars of resume. Those corpora have different
+ *    cosine distributions, so the percentiles don't transfer.
  *
- * TODO(stage-2): recompute these percentiles from the live corpus on a schedule
- * so calibration tracks the catalogue instead of drifting away from it.
+ * TODO(stage-2): re-derive from the LIVE corpus (with resumes) on a schedule,
+ * and re-base persisted applicant scores in the same migration.
  */
-const COSINE_FLOOR = 0.20;
-const COSINE_CEIL = 0.50;
+const COSINE_FLOOR = 0.15;
+const COSINE_CEIL = 0.55;
 
 /** Unrounded form, used internally for ranking so ties aren't manufactured. */
 export function semanticRelevancePrecise(similarity: number): number {

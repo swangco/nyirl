@@ -170,6 +170,15 @@ export const profiles = pgTable("profiles", {
   // interests). Nullable: populated on save when OPENAI_API_KEY is set; scoring
   // falls back to keyword fit when absent. See lib/embeddings.ts.
   embedding: vector("embedding", { dimensions: 1536 }),
+  /**
+   * The exact document text `embedding` was computed from. Lets a save skip the
+   * embedding call when the text is unchanged, WITHOUT the skip latching on
+   * failure: it's only written when an embedding actually succeeds, so a failed
+   * call leaves this stale, the next save sees a mismatch, and it retries.
+   * Comparing against the rebuilt profile instead would silently agree after a
+   * failure and never re-embed.
+   */
+  embeddingDocument: text("embedding_document"),
   digestOptOut: boolean("digest_opt_out").notNull().default(false),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),

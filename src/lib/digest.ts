@@ -2,15 +2,33 @@ import type { curatedLinks, events, profiles } from "@/db/schema";
 import { trackedHref } from "@/lib/links";
 import { computeStructuralScore, scoreCuratedLink } from "@/lib/scoring";
 
-/** Deliberately high — "better to skip a week than send a weak pick"
- * (Serena, 2026-07-22). Only curated links are gated on this; Serena's own
- * hosted events always make the cut. Under the redesigned blend
- * (0.6·relevance + 0.4·quality + boosts) an item clears the bar only when it is
- * BOTH a strong match and a high-quality room: a link from an unrecognized host
- * (CQS ≈ 33) can't reach 80 on match alone, whereas a tier-1/exclusive room
- * with a good match does. That keeps the digest selective by design — this is
- * the main knob to tune once there's real send/click data. */
-export const DIGEST_QUALITY_THRESHOLD = 80;
+/**
+ * Selection for the weekly digest. Implements "better to skip a week than send
+ * a weak pick" (Serena, 2026-07-22) at the EMAIL level rather than per item.
+ *
+ * A single absolute cutoff was tried and does not work. It is simultaneously
+ * too strict and too loose, and which one depends on the weights:
+ *  - Under the old 0.6/0.4 blend, an absolute 80 was unreachable for most
+ *    people — measured on live data, 2 of 4 real users had a best-ever score of
+ *    71 and 60, so they could never receive a single item no matter how good
+ *    curation got.
+ *  - Under the current 0.8/0.2 blend the same constant becomes too loose: an
+ *    unknown-host, open, out-of-town expo (CQS 18) reaches 0.8·100 + 0.2·18 =
+ *    83.6 on match alone. On the evaluation corpus the number of items clearing
+ *    80 with CQS < 50 rose from 4 to 129.
+ *
+ * So selection is now RELATIVE to what that user could plausibly get, with an
+ * absolute quality floor to keep junk out, and a minimum-count rule that skips
+ * the whole send rather than padding it.
+ */
+/** Never email an item whose room quality is this poor, however well it matches. */
+export const DIGEST_MIN_QUALITY = 40;
+/** Keep items within this fraction of the user's own best score. */
+export const DIGEST_RELATIVE_BAND = 0.85;
+/** Send at most this many curated links per email. */
+export const DIGEST_MAX_LINKS = 4;
+/** Below this many qualifying links, skip the week entirely (hosted events aside). */
+export const DIGEST_MIN_LINKS = 1;
 
 /** Where digest links point when a caller doesn't pass its own origin. */
 const DEFAULT_APP_URL = "https://nyirl.vercel.app";
@@ -39,7 +57,8 @@ const isProfileComplete = (profile: Profile) =>
 /**
  * Builds this week's digest for one profile: Serena's own upcoming events
  * (always included, unscored, mirroring the homepage pin) plus curated
- * links whose blended relevance+quality score clears DIGEST_QUALITY_THRESHOLD.
+ * links selected relative to that user's own best match (see the selection
+ * constants above).
  * `alreadySent` excludes anything already emailed to this person before —
  * an item is only ever sent once, however many weeks it stays upcoming.
  * Link scoring uses the same scoreCuratedLink as every on-site surface, so the
@@ -74,7 +93,7 @@ export function buildDigestItems(
       sortKey: computeStructuralScore(profile, e.criteriaWeights, e.tags),
     }));
 
-  const linkItems: DigestItem[] = upcomingLinks
+  const candidateLinks = upcomingLinks
     .filter((l) => !alreadySent.has(`link:${l.id}`) && l.eventDate)
     .map((l) => {
       const s = scoreCuratedLink(profile, l, {
@@ -96,9 +115,25 @@ export function buildDigestItems(
         }),
         score: s.score,
         sortKey: s.sortKey,
+        quality: s.quality,
       };
     })
-    .filter((item) => item.score >= DIGEST_QUALITY_THRESHOLD);
+    // Hard floor first: a poorly-curated room is never worth emailing, however
+    // well it happens to match.
+    .filter((item) => item.quality >= DIGEST_MIN_QUALITY)
+    .sort((a, b) => b.sortKey - a.sortKey);
+
+  // Then relative to this user's own ceiling, so someone whose best match is a
+  // 62 still gets their best few, while nobody gets filler far below their top.
+  const best = candidateLinks[0]?.sortKey ?? 0;
+  const selectedLinks = candidateLinks
+    .filter((item) => item.sortKey >= best * DIGEST_RELATIVE_BAND)
+    .slice(0, DIGEST_MAX_LINKS);
+
+  // "Skip the week" applies to the EMAIL, not the item: too little to say means
+  // send nothing rather than pad it out.
+  const linkItems: DigestItem[] =
+    selectedLinks.length >= DIGEST_MIN_LINKS ? selectedLinks : [];
 
   // Sort on the unrounded value: integer scores tie constantly across a large
   // catalogue, and ties would otherwise resolve to row order.

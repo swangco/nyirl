@@ -132,20 +132,17 @@ export async function saveProfile(formData: FormData) {
   // profile saves edit fields the vector doesn't derive from (email, linkedin,
   // headshot, digest opt-in), so rebuilding the previous document and comparing
   // skips the API call — removing ~300ms from the save path and avoiding
-  // needless spend/rate-limit pressure. Compared against the stored row rather
-  // than a hash column so this needs no migration.
-  const previousDocument = existing
-    ? buildProfileDocument({
-        fullName: existing.fullName,
-        title: existing.title,
-        company: existing.company,
-        profileType: existing.profileType,
-        bioBlurb: existing.bioBlurb,
-        interests: existing.interests,
-        tags: existing.tags,
-        resumeTextExtracted: existing.resumeTextExtracted,
-      })
-    : null;
+  // needless spend/rate-limit pressure.
+  //
+  // The comparison is against the document rebuilt from the STORED row, and is
+  // only safe when we know the stored vector was computed from that same stored
+  // document. `embeddingDocument` records exactly that. Without it this skip
+  // latches permanently on failure: if an embedding call errors (embedText
+  // swallows and returns null), the row keeps the old vector but saves the new
+  // text — and every later save would then see "document unchanged" and never
+  // retry, leaving the profile ranked forever against text it no longer
+  // contains, with no repair path (the admin backfill only fills NULL vectors).
+  const previousDocument = existing?.embeddingDocument ?? null;
   const documentUnchanged =
     previousDocument !== null && previousDocument === nextDocument && !!existing?.embedding;
 
@@ -180,7 +177,7 @@ export async function saveProfile(formData: FormData) {
       headshotUrl,
       resumeUrl,
       resumeTextExtracted,
-      ...(embedding ? { embedding } : {}),
+      ...(embedding ? { embedding, embeddingDocument: nextDocument } : {}),
     })
     .onConflictDoUpdate({
       target: profiles.userId,
@@ -189,7 +186,7 @@ export async function saveProfile(formData: FormData) {
         ...(headshotUrl ? { headshotUrl } : {}),
         ...(resumeUrl ? { resumeUrl } : {}),
         ...(resumeTextExtracted ? { resumeTextExtracted } : {}),
-        ...(embedding ? { embedding } : {}),
+        ...(embedding ? { embedding, embeddingDocument: nextDocument } : {}),
         updatedAt: new Date(),
       },
     });

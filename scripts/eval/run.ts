@@ -225,6 +225,16 @@ async function main() {
 
   const relCurrent = (u: SynthUser, e: SynthEvent) =>
     semanticRelevance(cosByPair.get(`${u.id}|${e.id}`)!);
+  /**
+   * The pre-change scorer, PINNED. Importing semanticRelevance for the baseline
+   * would make it track whatever constants are currently in scoring.ts, so every
+   * future retune would silently shrink its own measured improvement and the
+   * reported delta would be unreproducible. Hard-coded 0.15/0.55 + 0.6/0.4.
+   */
+  const relLegacy = (u: SynthUser, e: SynthEvent) => {
+    const c = cosByPair.get(`${u.id}|${e.id}`)!;
+    return Math.round(Math.min(1, Math.max(0, (c - 0.15) / (0.55 - 0.15))) * 100);
+  };
   /** Percentile-calibrated: map the observed cosine band onto 0-100 instead of
    * the hand-guessed 0.15-0.55 constants. */
   const lo = pct(0.05);
@@ -244,6 +254,9 @@ async function main() {
         profileEmbedding: vecs.get(u.id),
         linkEmbedding: vecs.get(e.id),
       }).sortKey,
+    // Pinned pre-change production scorer — the true "before" number.
+    "BASELINE 0.6/0.4 @ .15-.55": (u, e) =>
+      0.6 * relLegacy(u, e) + 0.4 * cqs.get(e.id)! + boost(u, e),
     "random (floor)": () => rand(),
     "cqs only (no personalization)": (_u, e) => cqs.get(e.id)!,
     "keyword only": (u, e) => kw.get(`${u.id}|${e.id}`)!,
