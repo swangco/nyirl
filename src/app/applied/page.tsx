@@ -35,7 +35,7 @@ export default async function AppliedPage() {
         <EmptyState
           eyebrow="Nothing yet"
           title="You haven't applied to any events yet."
-          action={{ href: "/", label: "Discover events" }}
+          action={{ href: "/discover", label: "Discover events" }}
         />
       ) : (
         <div className="flex flex-col gap-3">

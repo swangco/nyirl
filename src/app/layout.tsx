@@ -52,7 +52,7 @@ export default async function RootLayout({
             {signedIn ? (
               <SiteNav
                 items={[
-                  { href: "/", label: "Discover" },
+                  { href: "/discover", label: "Discover" },
                   { href: "/applied", label: "Applied" },
                   { href: "/profile", label: "Profile" },
                   ...(isHost ? [{ href: "/curate", label: "Host" }] : []),
