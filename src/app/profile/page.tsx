@@ -23,6 +23,7 @@ import { FitScore, ReasonChip } from "@/components/fit-score";
 import { ListingCard } from "@/components/listing-card";
 import { PageShell } from "@/components/page-shell";
 import { ProfileTypeFields } from "@/components/profile-type-fields";
+import { ScoreBadge } from "@/components/score-badge";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
 
@@ -152,14 +153,29 @@ export default async function ProfilePage({
   }
 
   return (
+<<<<<<< HEAD
+    <main className="mx-auto max-w-xl px-6 py-12">
+      <p className="mb-2 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
+        Your profile
+      </p>
+      <h1 className="mb-2 text-3xl font-bold tracking-tight text-balance">
+        Build once, matched forever
+      </h1>
+      <p className="mb-8 text-sm leading-relaxed text-foreground-soft">
+        This is the profile every event is scored against. The more you share,
+        the sharper your recommendations.
+      </p>
+
+=======
     <PageShell width="narrow">
+>>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
       {saved && (
         <div className="mb-6 rounded-md border border-line bg-surface px-4 py-2.5 text-sm text-foreground">
           Profile saved.
         </div>
       )}
       {required && (
-        <div className="mb-6 rounded-md border border-accent/30 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
+        <div className="mb-6 rounded-md border border-foreground/20 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
           Complete your profile before applying to an event.
         </div>
       )}
@@ -343,7 +359,7 @@ export default async function ProfilePage({
           {profile?.resumeUrl && (
             <a
               href={profile.resumeUrl}
-              className="text-sm text-accent underline underline-offset-2"
+              className="text-sm font-medium text-foreground underline underline-offset-4 decoration-line hover:decoration-foreground"
               target="_blank"
             >
               Current resume
@@ -359,7 +375,7 @@ export default async function ProfilePage({
 
         <button
           type="submit"
-          className="mt-2 self-start rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="mt-2 self-start rounded-full bg-foreground px-6 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
         >
           Save profile
         </button>
@@ -367,6 +383,40 @@ export default async function ProfilePage({
 
       {profile && (
         <div className="mt-14 border-t border-line pt-10">
+<<<<<<< HEAD
+          <p className="mb-2 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
+            Recommended for you
+          </p>
+          <p className="mb-6 text-sm leading-relaxed text-foreground-soft">
+            Ranked by fit against the profile above.
+          </p>
+          <div className="flex flex-col gap-2.5">
+            {recommendations.map((item) => (
+              <a
+                key={`${item.kind}-${item.id}`}
+                href={item.href}
+                target={item.kind === "link" ? "_blank" : undefined}
+                rel={item.kind === "link" ? "noopener noreferrer" : undefined}
+                className="group flex items-center justify-between gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-foreground/25"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-semibold tracking-tight text-foreground">
+                    {item.title}
+                  </p>
+                  <p className="mt-0.5 truncate text-sm text-foreground-soft">
+                    {item.subtitle}
+                  </p>
+                </div>
+                <ScoreBadge score={item.score} label="fit" />
+              </a>
+            ))}
+            {recommendations.length === 0 && (
+              <p className="text-sm text-foreground-soft">
+                Nothing to recommend yet.
+              </p>
+            )}
+          </div>
+=======
           <p className="mb-3 font-mono text-xs uppercase tracking-[0.14em] text-accent">
             Recommended for you
           </p>
@@ -406,11 +456,12 @@ export default async function ProfilePage({
               ))}
             </div>
           )}
+>>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
 
           {isHost && (
             <Link
               href="/curate"
-              className="mt-6 inline-block text-sm text-accent underline underline-offset-2"
+              className="mt-6 inline-block text-sm font-medium text-foreground underline underline-offset-4 decoration-line hover:decoration-foreground"
             >
               Manage what you host ({allLinks.length} link
               {allLinks.length === 1 ? "" : "s"}) →

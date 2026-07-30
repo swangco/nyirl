@@ -53,6 +53,19 @@ export default async function HostDashboardPage({
   }
 
   return (
+<<<<<<< HEAD
+    <main className="mx-auto max-w-3xl px-6 py-12">
+      <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
+        Host dashboard
+      </p>
+      <h1 className="mb-2 text-3xl font-bold tracking-tight text-balance">
+        {event.title}
+      </h1>
+      <p className="text-sm text-foreground-soft mb-4">
+        {regs.length} applicant{regs.length === 1 ? "" : "s"}
+        {event.capacity ? ` · capacity ${event.capacity}` : ""}
+      </p>
+=======
     <PageShell width="wide">
       <PageHeader
         eyebrow="Host dashboard"
@@ -61,6 +74,7 @@ export default async function HostDashboardPage({
           event.capacity ? ` · capacity ${event.capacity}` : ""
         }`}
       />
+>>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
 
       {Object.keys(typeCounts).length > 0 && (
         <div className="mb-8 flex flex-wrap gap-2 text-xs">
@@ -108,6 +122,29 @@ export default async function HostDashboardPage({
                       </a>
                     )}
                   </div>
+<<<<<<< HEAD
+                  <p className="text-sm text-foreground-soft">
+                    {profile?.title}
+                    {profile?.title && profile?.company ? " at " : ""}
+                    {profile?.company}
+                  </p>
+                  {profile?.linkedinUrl && (
+                    <a
+                      href={profile.linkedinUrl}
+                      target="_blank"
+                      className="text-xs font-medium text-foreground underline underline-offset-4 decoration-line hover:decoration-foreground"
+                    >
+                      LinkedIn
+                    </a>
+                  )}
+                </div>
+                <div className="text-right">
+                  <div className="font-mono text-lg font-semibold tabular-nums">
+                    {reg.compositeScore}
+                  </div>
+                  <div className="font-mono text-xs tabular-nums text-foreground-soft/70">
+                    struct {reg.structuralScore} · ai {reg.semanticScore}
+=======
                   <div className="shrink-0 text-right">
                     <div className="font-mono text-lg font-semibold tabular-nums">
                       {reg.compositeScore}
@@ -115,6 +152,7 @@ export default async function HostDashboardPage({
                     <div className="font-mono text-xs tabular-nums text-foreground-soft/70">
                       struct {reg.structuralScore} · match {reg.semanticScore}
                     </div>
+>>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
                   </div>
                 </div>
 

@@ -94,18 +94,31 @@ export default async function ApplyPage({
     : null;
 
   return (
+<<<<<<< HEAD
+    <main className="mx-auto max-w-xl px-6 py-12">
+      <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
+        {event.date.toLocaleDateString(undefined, {
+=======
     <PageShell width="narrow">
       <p className="mb-3 font-mono text-xs uppercase tracking-[0.14em] text-accent">
         {event.date.toLocaleDateString("en-US", {
+>>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
           weekday: "long",
           month: "long",
           day: "numeric",
           timeZone: "America/New_York",
         })}
       </p>
+<<<<<<< HEAD
+      <h1 className="mb-4 text-3xl font-bold tracking-tight text-balance">
+        {event.title}
+      </h1>
+      <p className="mb-8 leading-relaxed text-foreground-soft">{event.description}</p>
+=======
       <h1 className="mb-3 font-serif text-3xl font-semibold tracking-tight text-balance">
         {event.title}
       </h1>
+>>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
 
       {(event.location || spotsLeft !== null) && (
         <div className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs uppercase tracking-[0.08em] text-foreground-soft">
@@ -119,6 +132,11 @@ export default async function ApplyPage({
         </div>
       )}
 
+<<<<<<< HEAD
+      {already && (
+        <div className="mb-6 rounded-md border border-foreground/20 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
+          You&apos;ve already applied to this event.
+=======
       {event.description && (
         <p className="mb-8 text-foreground-soft">{event.description}</p>
       )}
@@ -126,11 +144,12 @@ export default async function ApplyPage({
       {submitted && !registration && (
         <div className="mb-6 rounded-md border border-line bg-surface px-4 py-2.5 text-sm text-foreground">
           Application submitted — you&apos;ll hear back from the host soon.
+>>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
         </div>
       )}
 
       {required && (
-        <div className="mb-6 rounded-md border border-accent/30 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
+        <div className="mb-6 rounded-md border border-foreground/20 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
           Complete your profile before applying.
         </div>
       )}
@@ -138,7 +157,7 @@ export default async function ApplyPage({
       {!profile ? (
         <a
           href="/profile"
-          className="inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
         >
           Complete your profile to apply
         </a>
@@ -155,7 +174,7 @@ export default async function ApplyPage({
           </p>
           <button
             type="submit"
-            className="rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+            className="rounded-full bg-foreground px-6 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
           >
             Apply to attend
           </button>
