@@ -57,7 +57,7 @@ export function DiscoverRow({
           {external && <ExternalGlyph />}
         </h2>
         {description && (
-          <p className="mt-1 line-clamp-2 font-sans text-xs text-foreground-soft">
+          <p className="mt-1 line-clamp-2 font-sans text-xs text-foreground-soft max-[400px]:line-clamp-1">
             {description}
           </p>
         )}
@@ -98,8 +98,9 @@ function ExternalGlyph() {
   );
 }
 
-// Placeholder glyph for hosted rows without an image. A4/step 7 introduces the
-// real skyline mark as public/mark-dark.svg; swap this for that asset then.
+// Placeholder glyph for hosted rows without an image. §A4 (rev 3) rules out
+// adding a logo mark anywhere in the product, so this inline glyph — not a
+// checked-in asset — is the permanent fallback, not a stand-in for one.
 function MarkGlyph() {
   return (
     <svg
