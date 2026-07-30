@@ -137,7 +137,7 @@ export default async function ApplyPage({
 
       {!profile ? (
         <a
-          href="/profile"
+          href="/apply"
           className="inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
         >
           Complete your profile to apply
