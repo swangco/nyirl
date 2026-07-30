@@ -50,8 +50,11 @@ The gate is "safe + the loops close + it can actually send." Ordered by blocking
 ### A3. Turn on distribution (unblock, config not code)
 - Set `OPENAI_API_KEY` (activate embeddings → run `backfill:embeddings`), `RESEND_API_KEY` +
   verified sending domain, `CRON_SECRET` — all in Vercel env. Then a real digest dry-run.
-- Restore a top-of-funnel: a public, signed-out browsable surface (even a read-only category
-  peek) for SEO/sharing, and the Beehiiv CTA that was dropped in the rebrand.
+- Restore a top-of-funnel — **partially superseded 2026-07-30** by
+  `docs/2026-07-27-ia-and-funnel-rearchitecture.md` (§A4): `/` now ships a public, signed-out
+  landing with real title/description/OG metadata, but it's a single marketing screen (get
+  started / sign in), not a browsable read-only category peek. That half of this bullet, and
+  the Beehiiv CTA, are still open.
 
 ### A4. Launch readiness
 - Error monitoring (Sentry or Vercel Observability) so prod failures are visible.
