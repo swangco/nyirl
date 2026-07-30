@@ -24,57 +24,73 @@ const inputClass =
   "rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-soft/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 const labelClass = "text-sm font-medium text-foreground";
 
-export function ProfileTypeFields({
+// The checkbox row and the type-conditional fields used to be one component
+// with its own internal selection state. /apply (§A6) needs to place them in
+// two different form sections while still reacting to the same selection, so
+// the state is lifted into these two controlled pieces; ProfileTypeFields
+// below composes them back into the original single unit for /profile, which
+// keeps that page's markup and behavior unchanged.
+export function ProfileTypeSelect({
   profileTypeEnum: types,
-  founderStageEnum: stages,
   defaultTypes,
+  selected,
+  onChange,
+}: {
+  profileTypeEnum: readonly string[];
+  defaultTypes: string[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2.5">
+      <legend className={labelClass}>Profile type</legend>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+        {types.map((type) => (
+          <label
+            key={type}
+            className="flex min-h-10 items-center gap-2.5 text-sm text-foreground-soft has-checked:text-foreground"
+          >
+            <input
+              type="checkbox"
+              name="profileType"
+              value={type}
+              defaultChecked={defaultTypes.includes(type)}
+              className="h-4 w-4 accent-accent"
+              onChange={(e) => {
+                const next = new Set(selected);
+                if (e.target.checked) next.add(type);
+                else next.delete(type);
+                onChange(next);
+              }}
+            />
+            {PROFILE_TYPE_LABELS[type as (typeof profileTypeEnum)[number]]}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+export function ProfileTypeConditionalFields({
+  founderStageEnum: stages,
+  selected,
   defaultStage,
   defaultFundingRaised,
   defaultChecksWritten,
 }: {
-  profileTypeEnum: readonly string[];
   founderStageEnum: readonly string[];
-  defaultTypes: string[];
+  selected: Set<string>;
   defaultStage: string | null;
   defaultFundingRaised: string | null;
   defaultChecksWritten: number | null;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set(defaultTypes));
-
   const isFounder = selected.has("founder");
   const isInvestor = selected.has("investor");
 
+  if (!isFounder && !isInvestor) return null;
+
   return (
     <>
-      <fieldset className="flex flex-col gap-2.5">
-        <legend className={labelClass}>Profile type</legend>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-          {types.map((type) => (
-            <label
-              key={type}
-              className="flex min-h-10 items-center gap-2.5 text-sm text-foreground-soft has-checked:text-foreground"
-            >
-              <input
-                type="checkbox"
-                name="profileType"
-                value={type}
-                defaultChecked={defaultTypes.includes(type)}
-                className="h-4 w-4 accent-accent"
-                onChange={(e) => {
-                  setSelected((prev) => {
-                    const next = new Set(prev);
-                    if (e.target.checked) next.add(type);
-                    else next.delete(type);
-                    return next;
-                  });
-                }}
-              />
-              {PROFILE_TYPE_LABELS[type as (typeof profileTypeEnum)[number]]}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
       {isFounder && (
         <div className="grid grid-cols-1 gap-4 rounded-md border border-line bg-surface p-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
@@ -113,6 +129,42 @@ export function ProfileTypeFields({
           />
         </label>
       )}
+    </>
+  );
+}
+
+export function ProfileTypeFields({
+  profileTypeEnum: types,
+  founderStageEnum: stages,
+  defaultTypes,
+  defaultStage,
+  defaultFundingRaised,
+  defaultChecksWritten,
+}: {
+  profileTypeEnum: readonly string[];
+  founderStageEnum: readonly string[];
+  defaultTypes: string[];
+  defaultStage: string | null;
+  defaultFundingRaised: string | null;
+  defaultChecksWritten: number | null;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set(defaultTypes));
+
+  return (
+    <>
+      <ProfileTypeSelect
+        profileTypeEnum={types}
+        defaultTypes={defaultTypes}
+        selected={selected}
+        onChange={setSelected}
+      />
+      <ProfileTypeConditionalFields
+        founderStageEnum={stages}
+        selected={selected}
+        defaultStage={defaultStage}
+        defaultFundingRaised={defaultFundingRaised}
+        defaultChecksWritten={defaultChecksWritten}
+      />
     </>
   );
 }

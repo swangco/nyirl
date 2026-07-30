@@ -83,7 +83,9 @@ export default async function DiscoverPage({
 
   // Rail counts and "This week" always reflect the full upcoming inventory —
   // only the ranked list below is scoped to the active category. The rail
-  // filters; it does not re-sort or re-score.
+  // filters; it does not re-sort or re-score. Every category in the taxonomy
+  // is shown, including zero-count ones (§A5) — the rail advertises what the
+  // site covers, not only what's currently booked.
   const categoryCounts = eventCategoryEnum
     .map((category) => ({
       category,
@@ -92,8 +94,7 @@ export default async function DiscoverPage({
         allEvents.filter((e) => e.category === category).length +
         links.filter((l) => l.category === category).length,
     }))
-    .filter(({ count }) => count > 0)
-    .sort((a, b) => b.count - a.count);
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
   const allCount = allEvents.length + links.length;
 
@@ -105,22 +106,40 @@ export default async function DiscoverPage({
     : links;
 
   // Serena's own events are her track record, not third-party curation, so they
-  // pin above scored links and don't carry a competitive fit number.
-  const hostedItems = scopedEvents.map((event) => ({
-    kind: "event" as const,
-    id: event.id,
-    href: `/events/${event.id}/apply`,
-    external: false,
-    image: null as string | null,
-    eyebrow: `${eventDateEyebrow(event.date)} · HOSTED BY NY IRL`,
-    title: event.title,
-    description: event.description,
-    tier: null as string | null,
-    reason: "",
-    score: isProfileComplete
+  // pin above scored links, but every row still shows a score (§A5) — reuse
+  // describeFit's tier bands on the same structural score this page already
+  // computes, rather than inventing a second scoring path. exclusivity/format
+  // aren't event concepts, so pass the schema defaults ("capped"/"mixer");
+  // describeFit's tier is score-only and doesn't read those two fields.
+  const hostedItems = scopedEvents.map((event) => {
+    const score = isProfileComplete
       ? computeStructuralScore(profile!, event.criteriaWeights, event.tags)
-      : 0,
-  }));
+      : 0;
+    const { tier } = describeFit(
+      {
+        title: event.title,
+        description: event.description,
+        exclusivity: "capped",
+        format: "mixer",
+        outOfTown: false,
+        tags: event.tags,
+      },
+      { score, relevance: 0, quality: 0, boosts: 0, usedEmbedding: false },
+    );
+    return {
+      kind: "event" as const,
+      id: event.id,
+      href: `/events/${event.id}/apply`,
+      external: false,
+      image: null as string | null,
+      eyebrow: `${eventDateEyebrow(event.date)} · HOSTED BY NY IRL`,
+      title: event.title,
+      description: event.description,
+      tier: tier as string | null,
+      reason: "",
+      score,
+    };
+  });
 
   const linkItems = isProfileComplete
     ? scopedLinks
@@ -244,7 +263,7 @@ export default async function DiscoverPage({
           {!isProfileComplete ? (
             <EmptyState
               title="Recommendations are scored against your profile — build yours first to see what's worth your time."
-              action={{ href: "/profile", label: "Build your profile" }}
+              action={{ href: "/apply", label: "Build your profile" }}
             />
           ) : recommendations.length === 0 ? (
             <EmptyState
@@ -265,7 +284,6 @@ export default async function DiscoverPage({
                   external={item.external}
                   image={item.image}
                   eyebrow={item.eyebrow}
-                  eyebrowAccent={item.kind === "event"}
                   title={item.title}
                   description={item.description}
                   chip={
@@ -274,9 +292,7 @@ export default async function DiscoverPage({
                     ) : undefined
                   }
                   score={
-                    item.kind === "link" && item.tier ? (
-                      <FitScore score={item.score} tier={item.tier} />
-                    ) : undefined
+                    item.tier ? <FitScore score={item.score} tier={item.tier} /> : undefined
                   }
                 />
               ))}

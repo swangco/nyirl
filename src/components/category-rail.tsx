@@ -21,17 +21,41 @@ export function CategoryRail({
   all: CategoryRailItem;
   items: CategoryRailItem[];
 }) {
-  const CAP = 8;
+  const CAP = 12;
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? items : items.slice(0, CAP);
   const hasOverflow = items.length > CAP;
 
   return (
     <aside className="w-full shrink-0 lg:w-[164px] lg:border-r lg:border-line lg:pr-6">
-      <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.14em] text-foreground-soft">
+      <p className="mb-3 hidden font-mono text-[10px] uppercase tracking-[0.14em] text-foreground-soft lg:block">
         Browse
       </p>
-      <nav className="flex flex-col gap-0.5">
+
+      {/* Mobile/tablet: horizontal snap-scroll chip strip (§A7), reusing the
+          techWeek row's snap pattern. Same items, sort, and cap as desktop —
+          this is a presentation swap at the breakpoint, not a second list. */}
+      <nav
+        aria-label="Browse categories"
+        className="-mx-5 flex snap-x snap-mandatory gap-2 overflow-x-auto px-5 pb-1 sm:-mx-6 sm:px-6 lg:hidden"
+      >
+        <RailChip {...all} />
+        {visible.map((item) => (
+          <RailChip key={item.href} {...item} />
+        ))}
+        {hasOverflow && !expanded && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="shrink-0 snap-start whitespace-nowrap rounded-full border border-line px-3 py-1.5 font-sans text-xs text-accent transition-colors hover:text-accent-hover"
+          >
+            More
+          </button>
+        )}
+      </nav>
+
+      {/* Desktop: vertical list with a terracotta left indicator on the active item. */}
+      <nav aria-label="Browse categories" className="hidden flex-col gap-0.5 lg:flex">
         <RailLink {...all} />
         {visible.map((item) => (
           <RailLink key={item.href} {...item} />
@@ -62,6 +86,22 @@ function RailLink({ href, label, count, active }: CategoryRailItem) {
     >
       <span>{label}</span>
       <span className="font-mono text-[11px] text-foreground-faint">{count}</span>
+    </Link>
+  );
+}
+
+function RailChip({ href, label, count, active }: CategoryRailItem) {
+  return (
+    <Link
+      href={href}
+      className={`shrink-0 snap-start whitespace-nowrap rounded-full border px-3 py-1.5 font-sans text-xs transition-colors ${
+        active
+          ? "border-accent bg-cream font-medium text-foreground"
+          : "border-line text-foreground-soft hover:border-accent/40 hover:text-foreground"
+      }`}
+    >
+      {label}
+      <span className="ml-1.5 font-mono text-[10px] text-foreground-faint">{count}</span>
     </Link>
   );
 }
