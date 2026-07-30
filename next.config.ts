@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
         destination: "/applied",
         permanent: true,
       },
+      {
+        source: "/category/:category",
+        destination: "/discover?category=:category",
+        permanent: true,
+      },
     ];
   },
 };

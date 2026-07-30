@@ -161,20 +161,23 @@ the logic itself must stay identical.
 One screen. No scroll-jack, no auto-advance.
 
 - Full-bleed vertical gradient, `#C85A28` → `#E39B8B`, top to bottom. Static.
-- The NY IRL skyline mark centered, ~320–400px, generous space above and below.
-- Wordmark below: Geist, uppercase, `letter-spacing: 0.22em`, cream `#F6F5F3`.
+- **No logo mark.** The wordmark is the focal element. Do not add an image, icon, or
+  illustration to this page.
+- Wordmark centered and large: Geist, uppercase, `letter-spacing: 0.22em`, cream `#F6F5F3`.
+  Scale it to carry the page on its own — roughly 15–20% of viewport width on desktop,
+  with generous space above and below. The gradient does the rest of the work.
 - One line beneath in Lora, regular weight, not italic. "Be in the right room" works.
 - Primary action: **Get started** — cream fill, `#1F1F1F` text, `--radius`.
 - Secondary, small: **Sign in**. Don't bury it; returning members land here too.
 - Footer: one line, cream, low emphasis. No nav.
 
-**Asset requirement.** The mark is dark line art on cream. On the gradient it needs a
-cream/knockout version — export both as SVG, not PNG. Don't fake it with
-`mix-blend-mode`; that fails unpredictably across a gradient. Name them
-`public/mark-dark.svg` and `public/mark-light.svg`.
+**No image assets are required for this page.** Type and gradient only. Do not add
+placeholder art, an SVG skyline, a generated icon, or a favicon-derived mark. If the page
+looks sparse, the fix is larger type and more space, not an illustration. A logo mark may
+be reintroduced later as its own change.
 
 Metadata: this page carries the site's SEO and OG weight. Real `<title>`, description, and
-an OG image (mark on gradient, 1200×630).
+an OG image — wordmark on the gradient, 1200×630, no mark.
 
 ## A5. `/discover` — the core screen
 
@@ -276,7 +279,7 @@ block.
 4. `/discover` — move page content, build rail, three-column row, enlarged `FitScore`.
 5. `/category/[category]` redirect.
 6. `/apply` reframe.
-7. New landing at `/`, both SVG mark weights.
+7. New landing at `/` — type and gradient only, no image assets.
 8. Mobile chip strip.
 9. Rewrite the visual-identity and A3 rows in `docs/design-vision.md`.
 
