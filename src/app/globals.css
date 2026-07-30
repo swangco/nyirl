@@ -1,7 +1,6 @@
 @import "tailwindcss";
 
 :root {
-<<<<<<< HEAD
   /* Sharp tech register — light, high-contrast, cool neutrals.
      Luma / Vercel direction, not warm boutique. */
   --background: #fafafa;
@@ -13,18 +12,8 @@
   --accent-hover: #27272a;
   --accent-soft: #18181b0d;
   --radius: 0.625rem;
-=======
-  --background: #f9f7f1;
-  --surface: #fdfcf8;
-  --foreground: #0a0a0a;
-  --foreground-soft: #62748e;
-  --line: #e5e2d5;
-  --accent: #101828;
-  --accent-hover: #2a3444;
-  --accent-soft: #10182814;
-  /* Warm paper is intentional — pin the scheme so native controls match. */
+  /* Pin the scheme so native controls (checkboxes, date pickers) match. */
   color-scheme: light;
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
 }
 
 @theme inline {

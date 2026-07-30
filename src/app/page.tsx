@@ -4,18 +4,6 @@ import { after } from "next/server";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { curatedLinks, eventCategoryEnum, events, profiles } from "@/db/schema";
-<<<<<<< HEAD
-import {
-  computeBlendedLinkScore,
-  computeCurationQualityScore,
-  computeLinkFitScore,
-  computeStructuralScore,
-} from "@/lib/scoring";
-import {
-  RecommendationCard,
-  type RecommendationItem,
-} from "@/components/recommendation-card";
-=======
 import { EmptyState } from "@/components/empty-state";
 import { FitScore, ReasonChip } from "@/components/fit-score";
 import { ListingCard } from "@/components/listing-card";
@@ -24,7 +12,6 @@ import { PageShell } from "@/components/page-shell";
 import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
 import { trackedHref } from "@/lib/links";
 import { computeStructuralScore, describeFit, scoreCuratedLink } from "@/lib/scoring";
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
 
 const CATEGORY_LABELS: Record<(typeof eventCategoryEnum)[number], string> = {
   founders: "Founders",
@@ -63,7 +50,6 @@ export default async function Home() {
   // Signed out — a minimal editorial landing, not the list.
   if (!session?.user?.id) {
     return (
-<<<<<<< HEAD
       <main className="mx-auto flex max-w-2xl flex-1 flex-col items-center justify-center gap-8 px-6 py-28 text-center">
         <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 font-mono text-xs uppercase tracking-[0.14em] text-foreground-soft">
           <span className="h-1.5 w-1.5 rounded-full bg-foreground" />
@@ -71,19 +57,10 @@ export default async function Home() {
         </span>
         <h1 className="max-w-xl text-balance text-4xl font-bold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
           Find an event worth your time
-=======
-      <main className="mx-auto flex min-h-[70svh] w-full max-w-2xl flex-1 flex-col items-center justify-center gap-10 px-6 py-24 text-center">
-        <h1 className="font-geist text-4xl font-semibold uppercase tracking-[0.14em] text-foreground sm:text-5xl sm:tracking-[0.16em]">
-          NY IRL
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
         </h1>
         <Link
           href="/sign-in"
-<<<<<<< HEAD
           className="rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
-=======
-          className="rounded-full bg-foreground px-6 py-3 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
         >
           Sign in to discover events
         </Link>
@@ -112,28 +89,11 @@ export default async function Home() {
       links.filter((l) => l.category === category).length,
   }));
 
-<<<<<<< HEAD
-  // Events are always hosted by Serena in this app's current single-host
-  // model — they're her own track record, not third-party curation, so
-  // they're pinned above scored links rather than competing on the rubric.
-  const hostedEvents: RecommendationItem[] = allEvents.map((event) => ({
-    kind: "event",
-    id: event.id,
-    title: event.title,
-    meta: event.date.toLocaleDateString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    }),
-    description: event.description,
-    image: null,
-=======
   // Serena's own events are her track record, not third-party curation, so they
   // pin above scored links and don't carry a competitive fit number.
   const hostedItems = allEvents.map((event) => ({
     kind: "event" as const,
     id: event.id,
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
     href: `/events/${event.id}/apply`,
     external: false,
     image: null as string | null,
@@ -147,11 +107,7 @@ export default async function Home() {
       : 0,
   }));
 
-<<<<<<< HEAD
-  const scoredLinks: RecommendationItem[] = isProfileComplete
-=======
   const linkItems = isProfileComplete
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
     ? links
         .map((link) => {
           const s = scoreCuratedLink(profile!, link, {
@@ -162,15 +118,7 @@ export default async function Home() {
           return {
             kind: "link" as const,
             id: link.id,
-<<<<<<< HEAD
-            title: link.title || link.sourceUrl,
-            meta: "From around town",
-            description: link.description,
-            image: link.imageUrl,
-            href: link.sourceUrl,
-=======
             href: trackedHref({ id: link.id, kind: "link", source: "homepage" }),
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
             external: true,
             image: link.imageUrl,
             eyebrow: "From around town",
@@ -214,18 +162,8 @@ export default async function Home() {
   ];
 
   return (
-<<<<<<< HEAD
-    <main className="mx-auto max-w-2xl px-6 py-12">
-      <p className="mb-2 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
-        Discover
-      </p>
-      <h1 className="mb-8 text-3xl font-bold tracking-tight text-balance">
-        Browse by category
-      </h1>
-=======
     <PageShell>
       <PageHeader eyebrow="Discover" title="Browse by category" />
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
 
       <div className="mb-14 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {categoryCounts.map(({ category, count }) => (
@@ -234,17 +172,11 @@ export default async function Home() {
             href={`/category/${category}`}
             className="group flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-foreground/25"
           >
-<<<<<<< HEAD
             <p className="font-mono text-xs tabular-nums text-foreground-soft">
               {String(count).padStart(2, "0")}
             </p>
             <p className="font-semibold tracking-tight text-foreground">
               {CATEGORY_LABELS[category]}
-=======
-            <p className="font-medium text-foreground">{CATEGORY_LABELS[category]}</p>
-            <p className="font-mono text-xs text-foreground-soft">
-              {count} {count === 1 ? "listing" : "listings"}
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
             </p>
           </Link>
         ))}
@@ -252,23 +184,6 @@ export default async function Home() {
 
       {techWeek.length > 0 && (
         <div className="mb-14">
-<<<<<<< HEAD
-          <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
-            This week
-          </p>
-          <div className="flex gap-2.5 overflow-x-auto pb-1">
-            {techWeekItems.map((item) => (
-              <a
-                key={item.id}
-                href={"sourceUrl" in item ? item.sourceUrl : `/events/${item.id}/apply`}
-                target={"sourceUrl" in item ? "_blank" : undefined}
-                rel={"sourceUrl" in item ? "noopener noreferrer" : undefined}
-                className="w-56 shrink-0 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-foreground/25"
-              >
-                <p className="truncate font-semibold tracking-tight text-foreground">
-                  {"sourceUrl" in item ? item.title || item.sourceUrl : item.title}
-                </p>
-=======
           <p className="mb-3 font-mono text-xs uppercase tracking-[0.14em] text-accent">
             This week
           </p>
@@ -287,41 +202,17 @@ export default async function Home() {
                   </p>
                 )}
                 <p className="line-clamp-2 font-medium text-foreground">{item.title}</p>
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
               </a>
             ))}
           </div>
         </div>
       )}
 
-<<<<<<< HEAD
-      <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
-=======
       <p className="mb-3 font-mono text-xs uppercase tracking-[0.14em] text-accent">
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
         Recommended for you
       </p>
 
       {!isProfileComplete ? (
-<<<<<<< HEAD
-        <div className="rounded-lg border border-line bg-surface p-6">
-          <p className="mb-4 text-sm leading-relaxed text-foreground-soft">
-            Recommendations are scored against your profile — build yours
-            first to see what&apos;s worth your time.
-          </p>
-          <Link
-            href="/profile"
-            className="inline-block rounded-full bg-foreground px-5 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
-          >
-            Build your profile
-          </Link>
-        </div>
-      ) : (
-        <>
-          <p className="mb-6 text-sm leading-relaxed text-foreground-soft">
-            Your own events first, then everything else ranked by fit against
-            your profile.
-=======
         <EmptyState
           title="Recommendations are scored against your profile — build yours first to see what's worth your time."
           action={{ href: "/profile", label: "Build your profile" }}
@@ -335,16 +226,9 @@ export default async function Home() {
         <>
           <p className="mb-6 text-sm text-foreground-soft">
             Your own events first, then everything else ranked by fit against your profile.
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
           </p>
           <div className="flex flex-col gap-2.5">
             {recommendations.map((item) => (
-<<<<<<< HEAD
-              <RecommendationCard
-                key={`${item.kind}-${item.id}`}
-                item={item}
-                scoreLabel="fit"
-=======
               <ListingCard
                 key={`${item.kind}-${item.id}`}
                 href={item.href}
@@ -363,7 +247,6 @@ export default async function Home() {
                     <FitScore score={item.score} tier={item.tier} />
                   ) : undefined
                 }
->>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
               />
             ))}
           </div>
