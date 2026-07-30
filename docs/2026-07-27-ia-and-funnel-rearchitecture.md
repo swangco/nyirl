@@ -189,17 +189,22 @@ the ranked list.
 - Eyebrow `BROWSE`: Geist Mono, 10px, tracked, `--foreground-soft`.
 - Vertical list. "All" first, then categories **sorted by live count, descending**, count
   beside each label in Geist Mono, `--foreground-faint`.
-- **Hide categories with zero upcoming listings.** This replaces the current 11-tile grid,
-  which advertises empty inventory, and lets the rail scale as categories are added.
-- Cap at 8 visible. Overflow collapses behind a `More` toggle in terracotta that expands in
-  place — no new route, no italics.
+- **Show every category in the taxonomy, including those with zero upcoming listings.**
+  A category with nothing in it renders normally with a count of `0`. Do not filter the
+  list by count. The rail advertises what the site covers, not only what is currently
+  booked. Zero-count items are not dimmed, disabled, or visually separated — same
+  treatment, the count carries the information.
+- Cap at 12 visible so the current taxonomy fits without truncation. Beyond that, overflow
+  collapses behind a `More` toggle in terracotta that expands in place — no new route, no
+  italics.
+- Ties in count sort alphabetically, so the zero-count block has a stable order.
 - Active item: `--foreground`, weight 500, terracotta left indicator.
 - **The rail filters; it does not navigate.** Selecting a category sets `?category=` and
   re-renders the same ranked list scoped to it. This is a filter applied before sort, never
   a re-sort. Ranking is untouched.
 
 Counts come from the same `categoryCounts` computation already in `src/app/page.tsx` —
-reuse it, sorted and filtered for display only.
+reuse it, sorted for display only. Do not add a `count > 0` filter.
 
 ### Right column — the list
 
@@ -212,21 +217,29 @@ reuse it, sorted and filtered for display only.
 **Row anatomy — three columns: thumbnail, content, score.**
 
 - **Left — thumbnail.** 56px square, `rounded-md`, `object-cover`, from the existing
-  `link.imageUrl`. Retained. Hosted events without an image fall back to the mark on
-  `--cream`.
+  `link.imageUrl`. Retained. Rows without an image fall back to a plain `--cream` block
+  with a small inline glyph — no checked-in asset, per §A4.
 - **Middle — content.**
-  - Eyebrow, Geist Mono 10px tracked caps. Curated: `TUE, AUG 11 · AROUND TOWN`. Hosted:
-    `THU, AUG 6 · HOSTED BY NY IRL`, in terracotta. (Real host names replace `AROUND TOWN`
-    in Part B — the field doesn't exist yet.)
+  - Eyebrow, Geist Mono 10px tracked caps, **`--foreground-soft` for every row type**.
+    Curated: `TUE, AUG 11 · AROUND TOWN`. Hosted: `THU, AUG 6 · HOSTED BY NY IRL`. No
+    color distinction between them — the eyebrow text and the external-link glyph carry
+    the difference. (Real host names replace `AROUND TOWN` in Part B — the field doesn't
+    exist yet.)
   - Title, Lora 15px, `--foreground`.
   - Description, Manrope 12px, `--foreground-soft`, clamped to two lines, from the existing
     scraped `description`.
   - `ReasonChip` beneath — existing component, unchanged, Geist Mono 11px, not italic.
-- **Right — score.** `FitScore`, pinned top-right with `align-items: flex-start`. **Same
-  component, same font, same colors.** Tier label stays Geist Mono 10px uppercase tracked;
-  numeral stays Geist Mono, tabular, `--foreground`. The only change is size: **`text-lg` →
-  `text-2xl`.** This is the one place in the design that is deliberately loud. Hosted events
-  show no numeral, as today.
+- **Right — score. Every row shows one, hosted and curated alike.** `FitScore`, pinned
+  top-right with `align-items: flex-start`. **Same component, same font, same colors.**
+  Tier label stays Geist Mono 10px uppercase tracked; numeral stays Geist Mono, tabular,
+  `--foreground`. The only change is size: **`text-lg` → `text-2xl`.** This is the one
+  place in the design that is deliberately loud.
+
+  Hosted events already have a score — `computeStructuralScore(profile, criteriaWeights,
+  tags)` is computed for them on this page. Pass it and its `describeFit` tier to
+  `FitScore` exactly as curated links do. Do not invent a second scoring path, do not
+  rescale, and do not modify `lib/scoring.ts`. The number displayed must be the number
+  already computed. An empty score column is not an acceptable state for any row.
 
 **Every curated row links out**, to the existing tracked `/api/out` href, new tab, exactly
 as today. The row is one link target. Add a small external-link glyph after the title so
@@ -298,10 +311,19 @@ exactly what it touches. They are independent — ship any subset.
   `createdAt`, with a unique constraint on `(userId, kind, itemId)`. The constraint is
   load-bearing — save is a toggle and double-clicks are common.
 - New server action to toggle.
-- Frontend: **Saved** joins the nav between Applied and Profile; a bookmark control on each
-  Discover row, bottom-right of the content column, **outside the main link target** so it
-  doesn't hijack the click; filled state in terracotta. New `/saved` route reusing the
-  Discover row treatment with no rail and no score column.
+- **Nav:** **Saved** joins the header between **Applied** and **Profile**, so the order
+  becomes **Discover · Applied · Saved · Profile** (plus **Host** for the host). Same
+  `SiteNav` active-state treatment as the other items.
+- **Save control:** a bookmark affordance on each Discover row, bottom-right of the content
+  column, **outside the main link target** so it doesn't hijack the click. Filled state in
+  terracotta.
+- **`/saved` page:** reuses the `DiscoverRow` treatment with no category rail and **no score
+  column**. Most recently saved first, mixed hosted events and curated links. This matches
+  `/applied`, which also shows no scores — the score is a discovery signal, and once
+  something is saved the decision is already made.
+  - Rows keep their outbound link and their save toggle, so unsaving from here removes the
+    row from the list.
+  - Empty state uses the existing `EmptyState` component, pointing back to Discover.
 
 Touches: `schema.ts`, one migration, one new action, `layout.tsx` nav, the row component,
 one new page.
