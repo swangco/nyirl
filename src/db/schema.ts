@@ -7,6 +7,8 @@ import {
   integer,
   boolean,
   unique,
+  index,
+  vector,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
 
@@ -164,6 +166,10 @@ export const profiles = pgTable("profiles", {
   genderIdentity: text("gender_identity").$type<(typeof genderIdentityEnum)[number]>(),
   ageRange: text("age_range").$type<(typeof ageRangeEnum)[number]>(),
   interests: text("interests").array().$type<(typeof interestTagEnum)[number][]>(),
+  // Semantic-matching vector over the profile document (bio + role + resume +
+  // interests). Nullable: populated on save when OPENAI_API_KEY is set; scoring
+  // falls back to keyword fit when absent. See lib/embeddings.ts.
+  embedding: vector("embedding", { dimensions: 1536 }),
   digestOptOut: boolean("digest_opt_out").notNull().default(false),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
@@ -187,6 +193,8 @@ export const events = pgTable("events", {
   excludeRules: text("exclude_rules"), // JSON string: string[]
   category: text("category").$type<(typeof eventCategoryEnum)[number]>().notNull(),
   tags: text("tags").array(),
+  // Semantic-matching vector over the event document (see lib/embeddings.ts). Nullable.
+  embedding: vector("embedding", { dimensions: 1536 }),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 
@@ -219,7 +227,12 @@ export const registrations = pgTable("registrations", {
   hostNotes: text("host_notes"),
   appliedAt: timestamp("applied_at", { mode: "date" }).notNull().defaultNow(),
   decidedAt: timestamp("decided_at", { mode: "date" }),
-});
+}, (t) => [
+  // One application per person per event — makes the apply flow's check-then-
+  // insert race-safe (a concurrent double-submit hits this instead of creating
+  // a duplicate row).
+  unique("registrations_event_user_unique").on(t.eventId, t.userId),
+]);
 
 export const connectionMetStatusEnum = ["met", "missed", "unknown"] as const;
 
@@ -265,6 +278,8 @@ export const curatedLinks = pgTable("curated_links", {
   format: text("format").$type<(typeof linkFormatEnum)[number]>().notNull().default("mixer"),
   outOfTown: boolean("out_of_town").notNull().default(false),
   tags: text("tags").array(),
+  // Semantic-matching vector over the link document (see lib/embeddings.ts). Nullable.
+  embedding: vector("embedding", { dimensions: 1536 }),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 
@@ -286,6 +301,51 @@ export const digestSends = pgTable(
     sentAt: timestamp("sent_at", { mode: "date" }).notNull().defaultNow(),
   },
   (t) => [unique().on(t.userId, t.itemKind, t.itemId)],
+);
+
+// --- Interaction logging (Stage 0 of the recommendation system) ---
+// Every impression/click/apply/digest event, so ranking can eventually learn
+// from behavior instead of heuristics alone, and so curation effort is
+// measurable. Deliberately append-only and denormalized (itemKind + itemId
+// rather than FKs) so a deleted event/link doesn't erase its history.
+
+export const interactionActionEnum = [
+  "impression",
+  "click",
+  "apply",
+  "digest_open",
+  "digest_click",
+] as const;
+
+export const interactionSourceEnum = [
+  "homepage",
+  "category",
+  "profile",
+  "digest",
+  "apply",
+] as const;
+
+export const interactionEvents = pgTable(
+  "interaction_events",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    // Nullable: signed-out impressions and digest-open pixels have no session.
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    itemKind: text("item_kind").$type<(typeof digestItemKindEnum)[number]>().notNull(),
+    itemId: text("item_id").notNull(),
+    action: text("action").$type<(typeof interactionActionEnum)[number]>().notNull(),
+    source: text("source").$type<(typeof interactionSourceEnum)[number]>().notNull(),
+    // Free-form JSON string for rank position, score at render time, etc.
+    metadata: text("metadata"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("interaction_events_user_idx").on(t.userId),
+    index("interaction_events_item_idx").on(t.itemKind, t.itemId),
+    index("interaction_events_action_idx").on(t.action),
+  ],
 );
 
 // --- Relations ---

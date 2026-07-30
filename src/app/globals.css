@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+<<<<<<< HEAD
   /* Sharp tech register — light, high-contrast, cool neutrals.
      Luma / Vercel direction, not warm boutique. */
   --background: #fafafa;
@@ -12,6 +13,18 @@
   --accent-hover: #27272a;
   --accent-soft: #18181b0d;
   --radius: 0.625rem;
+=======
+  --background: #f9f7f1;
+  --surface: #fdfcf8;
+  --foreground: #0a0a0a;
+  --foreground-soft: #62748e;
+  --line: #e5e2d5;
+  --accent: #101828;
+  --accent-hover: #2a3444;
+  --accent-soft: #10182814;
+  /* Warm paper is intentional — pin the scheme so native controls match. */
+  color-scheme: light;
+>>>>>>> 0f343c72596871eb166f3827b71c6fe36cac7df5
 }
 
 @theme inline {
@@ -37,4 +50,20 @@ body {
   font-family: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* One keyboard-focus treatment across every interactive element — cards, nav,
+   buttons, form controls — so keyboard users get a visible target on paper. */
+@layer base {
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
 }

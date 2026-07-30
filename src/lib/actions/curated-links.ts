@@ -13,6 +13,7 @@ import {
   linkExclusivityEnum,
   linkFormatEnum,
 } from "@/db/schema";
+import { buildLinkDocument, embedText, embedTexts } from "@/lib/embeddings";
 import { fetchLinkPreview } from "@/lib/og-meta";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
@@ -62,6 +63,16 @@ export async function addCuratedLink(formData: FormData) {
 
   const preview = await fetchLinkPreview(url);
 
+  const embedding = await embedText(
+    buildLinkDocument({
+      title: preview.title,
+      description: preview.description,
+      category,
+      format,
+      tags: null,
+    }),
+  );
+
   await db.insert(curatedLinks).values({
     addedBy: userId,
     sourceUrl: url,
@@ -75,6 +86,7 @@ export async function addCuratedLink(formData: FormData) {
     // Scraped date is more reliable than a manually typed one when found —
     // fall back to what the host entered otherwise.
     eventDate: preview.eventDate ?? eventDate,
+    ...(embedding ? { embedding } : {}),
   });
 
   redirect("/curate?added=1");
@@ -168,12 +180,27 @@ ${text}
   );
 
   if (previews.length > 0) {
-    await db.insert(curatedLinks).values(
+    // One batched embedding call for the whole insert (index-aligned with previews).
+    const embeddings = await embedTexts(
       previews.map(({ url, preview }) => {
+        const event = byUrl.get(url)!;
+        return buildLinkDocument({
+          title: preview.title,
+          description: preview.description,
+          category: event.category,
+          format: event.format,
+          tags: null,
+        });
+      }),
+    );
+
+    await db.insert(curatedLinks).values(
+      previews.map(({ url, preview }, i) => {
         const event = byUrl.get(url)!;
         const aiGuessedDate = event.eventDate ? new Date(event.eventDate) : null;
         const validAiGuess =
           aiGuessedDate && !Number.isNaN(aiGuessedDate.getTime()) ? aiGuessedDate : null;
+        const embedding = embeddings[i];
         return {
           addedBy: userId,
           sourceUrl: url,
@@ -186,6 +213,7 @@ ${text}
           // Scraped date beats the AI's guess from the pasted text, which
           // beats nothing at all.
           eventDate: preview.eventDate ?? validAiGuess,
+          ...(embedding ? { embedding } : {}),
         };
       }),
     );

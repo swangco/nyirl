@@ -14,6 +14,7 @@ import {
   profiles,
   profileTypeEnum,
 } from "@/db/schema";
+import { buildProfileDocument, embedText } from "@/lib/embeddings";
 
 export async function saveProfile(formData: FormData) {
   const session = await auth();
@@ -41,7 +42,12 @@ export async function saveProfile(formData: FormData) {
     : null;
   const fundingRaised = String(formData.get("fundingRaised") ?? "").trim();
   const checksWrittenRaw = String(formData.get("checksWritten") ?? "").trim();
-  const checksWritten = checksWrittenRaw ? parseInt(checksWrittenRaw, 10) : null;
+  const checksWrittenParsed = checksWrittenRaw ? parseInt(checksWrittenRaw, 10) : null;
+  // Guard against parseInt("abc") === NaN reaching the integer column (crash).
+  const checksWritten =
+    checksWrittenParsed !== null && !Number.isNaN(checksWrittenParsed)
+      ? checksWrittenParsed
+      : null;
 
   const genderIdentityRaw = String(formData.get("genderIdentity") ?? "");
   const genderIdentity = (genderIdentityEnum as readonly string[]).includes(genderIdentityRaw)
@@ -59,6 +65,10 @@ export async function saveProfile(formData: FormData) {
     .filter((i): i is (typeof interestTagEnum)[number] =>
       (interestTagEnum as readonly string[]).includes(i),
     );
+
+  // The form's digest checkbox is positive ("Weekly digest" = subscribed);
+  // an unchecked box is absent from the payload, i.e. opted out.
+  const digestOptOut = formData.get("digestSubscribed") !== "on";
 
   if (!fullName) {
     throw new Error("Full name is required");
@@ -103,50 +113,65 @@ export async function saveProfile(formData: FormData) {
     where: eq(profiles.userId, userId),
   });
 
-  if (existing) {
-    await db
-      .update(profiles)
-      .set({
-        fullName,
-        email,
-        linkedinUrl: linkedinUrl || null,
-        company: company || null,
-        title: title || null,
-        bioBlurb: bioBlurb || null,
-        profileType: selectedTypes,
-        stage,
-        fundingRaised: fundingRaised || null,
-        checksWritten,
-        genderIdentity,
-        ageRange,
-        interests,
-        ...(headshotUrl ? { headshotUrl } : {}),
-        ...(resumeUrl ? { resumeUrl } : {}),
-        ...(resumeTextExtracted ? { resumeTextExtracted } : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(profiles.userId, userId));
-  } else {
-    await db.insert(profiles).values({
-      userId,
+  // Semantic-matching vector over the profile document. Uses the freshly
+  // uploaded resume text if present, else whatever was previously extracted.
+  // Returns null when OPENAI_API_KEY is unset — in that case we leave any
+  // existing embedding untouched rather than wiping it.
+  const embedding = await embedText(
+    buildProfileDocument({
       fullName,
-      email,
-      linkedinUrl: linkedinUrl || null,
-      company: company || null,
       title: title || null,
-      bioBlurb: bioBlurb || null,
+      company: company || null,
       profileType: selectedTypes,
-      stage,
-      fundingRaised: fundingRaised || null,
-      checksWritten,
-      genderIdentity,
-      ageRange,
+      bioBlurb: bioBlurb || null,
       interests,
+      tags: existing?.tags ?? null,
+      resumeTextExtracted: resumeTextExtracted ?? existing?.resumeTextExtracted ?? null,
+    }),
+  );
+
+  // Atomic upsert on the unique userId — replaces a check-then-insert that
+  // could 500 on two concurrent first-saves. On update we only overwrite
+  // headshot/resume/embedding when a new value was produced, preserving the
+  // existing ones otherwise.
+  const commonFields = {
+    fullName,
+    email,
+    linkedinUrl: linkedinUrl || null,
+    company: company || null,
+    title: title || null,
+    bioBlurb: bioBlurb || null,
+    profileType: selectedTypes,
+    stage,
+    fundingRaised: fundingRaised || null,
+    checksWritten,
+    genderIdentity,
+    ageRange,
+    interests,
+    digestOptOut,
+  };
+
+  await db
+    .insert(profiles)
+    .values({
+      userId,
+      ...commonFields,
       headshotUrl,
       resumeUrl,
       resumeTextExtracted,
+      ...(embedding ? { embedding } : {}),
+    })
+    .onConflictDoUpdate({
+      target: profiles.userId,
+      set: {
+        ...commonFields,
+        ...(headshotUrl ? { headshotUrl } : {}),
+        ...(resumeUrl ? { resumeUrl } : {}),
+        ...(resumeTextExtracted ? { resumeTextExtracted } : {}),
+        ...(embedding ? { embedding } : {}),
+        updatedAt: new Date(),
+      },
     });
-  }
 
   redirect("/profile?saved=1");
 }
