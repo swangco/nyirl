@@ -21,7 +21,7 @@ export function CategoryRail({
   all: CategoryRailItem;
   items: CategoryRailItem[];
 }) {
-  const CAP = 8;
+  const CAP = 12;
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? items : items.slice(0, CAP);
   const hasOverflow = items.length > CAP;
