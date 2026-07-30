@@ -2,6 +2,8 @@
 
 A living document capturing where NY IRL is headed and why, built through a PM-style discovery conversation on 2026-07-22. Update it as the vision sharpens — this isn't meant to be final.
 
+> **Superseded (2026-07-30):** the visual-identity row below (sharp/premium, Luma-Vercel register) and the signed-out landing treatment were replaced by `docs/2026-07-27-ia-and-funnel-rearchitecture.md` — a quieter, warm-paper editorial register (terracotta accent, Manrope/Lora typefaces) rather than the cool-neutral sans-only direction this doc originally called for. Shipped as-is at Serena's direction. Everything else in this doc (audience, curation model, success metric, roadmap) still holds.
+
 ## 1. Vision & problem
 
 NY IRL is a **personal concierge for discovering NYC tech events** — not a general "anything happening in the city" app, and not, at its core, about who happens to be hosting a given event. The value is the matching: someone builds a profile once, and the algorithm (not a generic feed) tells them what's actually worth their time in the tech/founder/investor/builder scene.

@@ -1,10 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Lora, Manrope } from "next/font/google";
 import Link from "next/link";
 import { auth, signOut } from "@/auth";
+import { SiteNav } from "@/components/site-nav";
 import "./globals.css";
 
 const HOST_USER_ID = "6a741461-1a2a-4313-b428-2bcf680d5f14"; // Serena Wang
+
+const manrope = Manrope({ variable: "--font-manrope", subsets: ["latin"] });
 
 const geist = Geist({
   variable: "--font-geist",
@@ -18,6 +21,8 @@ const geistMono = Geist_Mono({
   weight: ["400", "500"],
 });
 
+const lora = Lora({ variable: "--font-lora", subsets: ["latin"], weight: ["500", "600"] });
+
 export const metadata: Metadata = {
   title: "NY IRL — Curated NYC tech events",
   description:
@@ -25,7 +30,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f9f7f1",
+  themeColor: "#F6F5F3",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -45,7 +50,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistMono.variable} ${geist.variable} bg-background h-full antialiased`}
+      className={`${manrope.variable} ${geistMono.variable} ${geist.variable} ${lora.variable} bg-background h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <header className="sticky top-0 z-50 border-b border-line bg-background/80 backdrop-blur-md">
@@ -56,30 +61,22 @@ export default async function RootLayout({
             >
               NY IRL
             </Link>
-            <nav className="flex items-center gap-1 text-sm">
-              {signedIn ? (
-                <>
-                  <Link href="/" className={navLinkClass}>
-                    Discover
-                  </Link>
-                  <Link href="/applications" className={navLinkClass}>
-                    Applied
-                  </Link>
-                  <Link href="/profile" className={navLinkClass}>
-                    Profile
-                  </Link>
-                  {isHost && (
-                    <Link href="/curate" className={navLinkClass}>
-                      Host
-                    </Link>
-                  )}
-                </>
-              ) : (
+            {signedIn ? (
+              <SiteNav
+                items={[
+                  { href: "/discover", label: "Discover" },
+                  { href: "/applied", label: "Applied" },
+                  { href: "/profile", label: "Profile" },
+                  ...(isHost ? [{ href: "/curate", label: "Host" }] : []),
+                ]}
+              />
+            ) : (
+              <nav className="flex items-center gap-4 sm:gap-5">
                 <Link href="/sign-in" className={navLinkClass}>
                   Sign in
                 </Link>
-              )}
-            </nav>
+              </nav>
+            )}
           </div>
         </header>
 

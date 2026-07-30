@@ -17,6 +17,7 @@ import {
 import { saveProfile } from "@/lib/actions/profile";
 import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
 import { trackedHref } from "@/lib/links";
+import { isProfileComplete as checkProfileComplete } from "@/lib/profile-completeness";
 import { computeStructuralScore, describeFit, scoreCuratedLink } from "@/lib/scoring";
 import { EmptyState } from "@/components/empty-state";
 import { FitScore, ReasonChip } from "@/components/fit-score";
@@ -90,10 +91,7 @@ export default async function ProfilePage({
   // uses so the numbers here can't diverge from what Discover shows. Gated on
   // profile completeness, same as the homepage and digest, so the three
   // surfaces agree on when a user is scorable.
-  const isProfileComplete =
-    !!profile?.fullName &&
-    (profile.profileType?.length ?? 0) > 0 &&
-    !!profile.bioBlurb?.trim();
+  const isProfileComplete = checkProfileComplete(profile);
   const now = new Date();
   const recommendations = profile && isProfileComplete
     ? [

@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  /* Sharp tech register — light, high-contrast, cool neutrals.
-     Luma / Vercel direction, not warm boutique. */
-  --background: #fafafa;
-  --surface: #ffffff;
-  --foreground: #09090b;
-  --foreground-soft: #71717a;
-  --line: #e4e4e7;
-  --accent: #18181b;
-  --accent-hover: #27272a;
-  --accent-soft: #18181b0d;
+  --background: #F6F5F3;
+  --surface: #FDFCFA;
+  --foreground: #1F1F1F;
+  --foreground-soft: #6C6C6C;
+  --foreground-faint: #B4B2A9;
+  --line: #E0DED9;
+  --accent: #C6714C;
+  --accent-hover: #7B553A;
+  --accent-soft: #C6714C14;
+  --cream: #E9E0D4;
   --radius: 0.625rem;
-  /* Pin the scheme so native controls (checkboxes, date pickers) match. */
+  /* Warm paper is intentional — pin the scheme so native controls match. */
   color-scheme: light;
 }
 
@@ -21,12 +21,14 @@
   --color-surface: var(--surface);
   --color-foreground: var(--foreground);
   --color-foreground-soft: var(--foreground-soft);
+  --color-foreground-faint: var(--foreground-faint);
   --color-line: var(--line);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
-  --font-sans: var(--font-geist);
-  --font-serif: var(--font-geist);
+  --color-cream: var(--cream);
+  --font-sans: var(--font-manrope);
+  --font-serif: var(--font-lora);
   --font-mono: var(--font-geist-mono);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
