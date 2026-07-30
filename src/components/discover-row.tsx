@@ -10,7 +10,6 @@ export function DiscoverRow({
   external,
   image,
   eyebrow,
-  eyebrowAccent,
   title,
   description,
   chip,
@@ -20,12 +19,10 @@ export function DiscoverRow({
   external?: boolean;
   image?: string | null;
   eyebrow?: string;
-  /** Terracotta eyebrow for hosted rows; muted for everything else. */
-  eyebrowAccent?: boolean;
   title: string;
   description?: string | null;
   chip?: ReactNode;
-  /** Right-aligned FitScore slot — omitted entirely for hosted rows. */
+  /** Right-aligned FitScore slot. */
   score?: ReactNode;
 }) {
   const className = "group flex items-start gap-4 py-5 first:pt-0";
@@ -44,11 +41,7 @@ export function DiscoverRow({
       </div>
       <div className="min-w-0 flex-1">
         {eyebrow && (
-          <p
-            className={`mb-1 font-mono text-[10px] uppercase tracking-[0.1em] ${
-              eyebrowAccent ? "text-accent" : "text-foreground-soft"
-            }`}
-          >
+          <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.1em] text-foreground-soft">
             {eyebrow}
           </p>
         )}
