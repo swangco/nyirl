@@ -263,7 +263,7 @@ export default async function DiscoverPage({
           {!isProfileComplete ? (
             <EmptyState
               title="Recommendations are scored against your profile — build yours first to see what's worth your time."
-              action={{ href: "/profile", label: "Build your profile" }}
+              action={{ href: "/apply", label: "Build your profile" }}
             />
           ) : recommendations.length === 0 ? (
             <EmptyState
