@@ -262,12 +262,13 @@ drift surfaced as "was N".
 
 ## 9. Deploy steps
 
-**1. Add the column FIRST — this one is not optional.** Drizzle selects every
-column, so until `profiles.embedding_document` exists, every profiles query
-throws and the app is down, not degraded.
+**1. Add the columns FIRST — this is not optional.** Drizzle selects every
+column, so until these exist the matching queries throw and the app is down, not
+degraded.
 
 ```
 psql "$DATABASE_URL" -f db/manual/2026-07-28-profile-embedding-document.sql
+psql "$DATABASE_URL" -f db/manual/2026-08-05-curated-link-host-names.sql
 ```
 
 Hand-written rather than a drizzle-kit migration because this project has no
@@ -286,8 +287,12 @@ curl -X POST -H "authorization: Bearer $CRON_SECRET" \
   "https://<deployment>/api/admin/embeddings"
 ```
 
-`GET` on the same URL reports `profilesMissingVector` and `profilesStaleDocument`
-separately, so the repair can be verified rather than assumed. Run it *after*
+`GET` on the same URL reports `profilesMissingVector`, `profilesStaleDocument`
+and `curatedLinksStaleDocument` separately, so the repair can be verified rather
+than assumed. **All 40 links are currently stale** — their descriptions were
+widened from ~157 to ~1,214 chars on 2026-08-05 but their vectors still come
+from the truncated text. Production's endpoint predates the `force` flag and
+`/api/admin/embed` doesn't exist there, so this cannot be done before deploy. Run it *after*
 deploy: while `main` still builds documents with resume text, the two would
 disagree and re-embed each other on every save.
 

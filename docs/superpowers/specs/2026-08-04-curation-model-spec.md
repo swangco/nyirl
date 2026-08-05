@@ -150,3 +150,69 @@ informative than the reverse.
   can override beats silently discarding something she'd have kept.
 - Do **not** re-introduce host-brand diversity until `host_name` exists. It was
   reverted specifically because the host had to be guessed from text.
+
+
+---
+
+# Addendum, 2026-08-05: what adversarial review did to this spec
+
+Two design reviewers with live database access were run against the plan above
+*before* any of it was built. Between them they rejected most of it, and the
+central finding was that **the design sat on top of two scraper bugs**, so
+nothing built on it could have worked.
+
+## What shipped instead (commit `0be149d`)
+
+1. **`extractMeta` was missing the `s` regex flag.** Luma's `og:description`
+   contains literal newlines, so the pattern failed to match at all and the row
+   stored NULL. Two of three live Luma pages were silently losing their whole
+   description. Titles were unaffected because titles are single-line, which is
+   why nobody noticed.
+2. **`og:description` is a ~150-char SEO summary.** The full text is published
+   as JSON-LD. Backfilled across the live corpus: **+39,753 characters, median
+   +1,460 per row, average description 157 -> 1,214.** The link embedding carries
+   80% of the ranking weight and was reading about a tenth of the page.
+3. **Host is published as structured data** (`organizer`), resolving on 27 of 40
+   links — so Stage 1's manual-entry plan was unnecessary work.
+4. **`clay` and `claude` were missing** from the allowlist despite Serena naming
+   both, and **"(N)YC" paid out Y Combinator's host score** via the tokens `n yc`.
+
+## What was rejected, and why
+
+- **The "interesting" rule** ("the activity is the draw and you couldn't arrange
+  it yourself"). Hand-rated against the corpus, it **rejects 84% of what Serena
+  actually kept** — 20 of 40 links are declared `mixer`, and she kept happy
+  hours. Her own third example falsifies the second clause: anyone can book a
+  boxing class. The reviewer's reformulation — *there is a thing you do together
+  and it gives you a story afterwards* — fits far better, and belongs as a
+  tie-breaker at the top of an already-host-filtered list, not as a second gate.
+- **Validating novelty against her own ratings is unfalsifiable.** The corpus is
+  so skewed that a model returning the constant `1` for every input scores 59%
+  exactly and **95% within one point**. Any "the model agrees with Serena" result
+  would be passed by a stub.
+- **The keyword fallback**: 50% precision on live data. Best failure — the US
+  Open "**suite**" keyword matching "VP and C-**Suite**" in the FirstMark summit.
+  It also reintroduces the substring-collision class that got host-brand
+  diversity reverted.
+- **Host tier points, the unknown-host penalty, and clout columns.** The 18-point
+  tier-2 figure had no derivation, and subdividing a signal already measured near
+  random for ranking produces finer-grained noise. The unknown-host penalty turned
+  out to encode *"is this link on luma.com"* — it would have demoted the FirstMark
+  invite-only summit and the Runway CEO's personal invite.
+
+## The two things that are genuinely blocked, restated
+
+1. **There is no negative class anywhere.** Serena discards ~80% of what she
+   sees and **not one rejected candidate is stored**. A filter's only job is to
+   discard; it cannot be validated on a table containing only keeps. Persisting
+   rejected candidates is the highest-value change available and needs no LLM.
+2. **The 40 links are not a curated set.** 31 of them arrived in a single
+   `addCuratedLinksBulk` paste with no review step — which is how a Google Form,
+   an X profile, and a calendar index page got in. So the "19 of 40 clear tier-1
+   vs her implied 8" calibration in §"Gap analysis" above **compares against a
+   population it was never drawn from**, and should not be trusted in either
+   direction.
+
+Also worth recording: `exclusivity` is 33/40 `capped` not because Luma caps
+headcount, but because the bulk-import LLM prompt falls through to `"capped"` as
+its default. The claim in Stage 4 above is wrong.
