@@ -335,7 +335,7 @@ const PROFILE_TYPE_KEYWORDS: Record<(typeof profileTypeEnum)[number], string[]> 
  * unrecognized name is worse than an incomplete list.
  *
  * Entries are lowercase whitespace-normalized phrases and are matched on word
- * boundaries (see isTierOneHost), so short names like "yc" or "aws" match only
+ * boundaries (see matchTierOneHost), so short names like "aws" match only
  * as whole tokens — never as a substring inside another word. Multi-word
  * phrases like "first round" match as an adjacent token run.
  *
@@ -352,7 +352,26 @@ const TIER_ONE_HOSTS = [
   "google deepmind", "microsoft", "aws", "tiktok", "brex", "firstmark",
   "gamma", "speedrun", "hubspot", "suno", "flybridge", "xai", "runway",
   "columbia university", "bergdorf goodman", "lvmh",
+  // Named directly by Serena as tier 1 and previously absent, so live listings
+  // "Clay in NY" and "New York | Claude Code for Developers" scored zero on the
+  // criterion she checks first.
+  "clay", "claude",
 ].map((h) => h.trim().toLowerCase().replace(/\s+/g, " "));
+
+/**
+ * Names that are also ordinary English words, or substrings of common ones.
+ * Matching these against free prose produces false hosts — measured live,
+ * "(N)YC Alumni + Founder Friends" normalises to the tokens `n yc` and so paid
+ * out Y Combinator's full host score, and the same class of collision is why
+ * host-brand diversity was reverted on 2026-07-28.
+ *
+ * They stay eligible when matched against a STRUCTURED host name, where "Modal"
+ * unambiguously means Modal. They are simply never inferred from prose.
+ */
+const UNSAFE_IN_PROSE = new Set([
+  "yc", "primary", "gamma", "modal", "sierra", "runway", "notion", "cursor",
+  "ramp", "clay", "mercury", "aws", "versi", "the collective",
+]);
 
 /**
  * True if the preview text mentions a recognized tier-1 host. Normalizes the
@@ -366,15 +385,66 @@ export function matchTierOneHost(text: string): string | null {
   // deterministic and "y combinator" wins over a bare "yc".
   let best: string | null = null;
   for (const host of TIER_ONE_HOSTS) {
-    if (host.length > 0 && haystack.includes(` ${host} `)) {
-      if (!best || host.length > best.length) best = host;
+    if (host.length === 0) continue;
+    if (!haystack.includes(` ${host} `)) continue;
+    // An ambiguous name counts from prose ONLY where the text explicitly credits
+    // it as the host: "hosted by Modal" is unambiguous, "a modal dialog" is not.
+    if (UNSAFE_IN_PROSE.has(host) && !creditsHost(haystack, host)) continue;
+    if (!best || host.length > best.length) best = host;
+  }
+  return best;
+}
+
+/** Does the text credit `host` as the one running the event, rather than merely
+ * mentioning the word? Used to re-admit the names that are also English words. */
+function creditsHost(haystack: string, host: string): boolean {
+  return new RegExp(`(hosted|presented|brought to you|organized|organised) by ${host}\\b`).test(
+    haystack,
+  );
+}
+
+/**
+ * Tier-1 match against the listing's DECLARED organisers. This is the reliable
+ * path: it reads structured data rather than guessing from prose, so the full
+ * allowlist applies including the names that are ordinary English words.
+ */
+export function matchTierOneHostName(hostNames: string[] | null): string | null {
+  if (!hostNames?.length) return null;
+  let best: string | null = null;
+  for (const raw of hostNames) {
+    // Strip possessives BEFORE collapsing punctuation. Luma calendar names are
+    // routinely possessive ("Andrew's Yeung's Tech Events"), and normalising
+    // punctuation first turns that into "andrew s yeung s", which no longer
+    // contains "andrew yeung" — the correct host was being dropped.
+    const hay = ` ${raw
+      .toLowerCase()
+      .replace(/['’`]s\b/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()} `;
+    for (const host of TIER_ONE_HOSTS) {
+      if (host.length > 0 && hay.includes(` ${host} `)) {
+        if (!best || host.length > best.length) best = host;
+      }
     }
   }
   return best;
 }
 
-function isTierOneHost(text: string): boolean {
-  return matchTierOneHost(text) !== null;
+/**
+ * Preferred entry point. Uses the declared organisers when the listing publishes
+ * them (27 of 40 live links) and only falls back to scanning prose otherwise —
+ * where the ambiguous names are excluded, so the fallback is conservative rather
+ * than confidently wrong.
+ */
+export function resolveTierOneHost(
+  link: Pick<CuratedLink, "title" | "description"> & { hostNames?: string[] | null },
+): string | null {
+  const declared = matchTierOneHostName(link.hostNames ?? null);
+  if (declared) return declared;
+  // A page that declared organisers and matched none is a genuine "not tier 1",
+  // not a gap to be filled by guessing at the prose.
+  if (link.hostNames?.length) return null;
+  return matchTierOneHost(`${link.title ?? ""} ${link.description ?? ""}`);
 }
 
 /**
@@ -471,10 +541,14 @@ type CuratedLink = typeof curatedLinks.$inferSelect;
  * NYC locality, and intimacy (smaller = more curated) all feed it.
  */
 export function computeCurationQualityScore(
-  link: Pick<CuratedLink, "title" | "description" | "exclusivity" | "format" | "outOfTown">,
+  link: Pick<CuratedLink, "title" | "description" | "exclusivity" | "format" | "outOfTown"> & {
+    hostNames?: string[] | null;
+  },
 ): number {
+  // Prefers the listing's declared organisers; only guesses from prose when the
+  // page publishes none. See resolveTierOneHost.
+  const host = resolveTierOneHost(link) ? HOST_TIER_POINTS.tier_1 : HOST_TIER_POINTS.unknown;
   const text = `${link.title ?? ""} ${link.description ?? ""}`;
-  const host = isTierOneHost(text) ? HOST_TIER_POINTS.tier_1 : HOST_TIER_POINTS.unknown;
   // Fall back to the schema defaults for any value outside the current enum
   // (legacy rows, manual SQL) so an unmapped value can't make the score NaN.
   const exclusivity = EXCLUSIVITY_POINTS[link.exclusivity] ?? EXCLUSIVITY_POINTS.capped;
@@ -706,7 +780,7 @@ export function describeFit(link: ScorableLink, s: LinkScore): { tier: string; r
           : "Worth a look";
 
   const reasons: string[] = [];
-  if (isTierOneHost(`${link.title ?? ""} ${link.description ?? ""}`)) reasons.push("notable host");
+  if (resolveTierOneHost(link)) reasons.push("notable host");
   if (link.exclusivity === "invite_only") reasons.push("invite-only");
   else if (link.format === "dinner") reasons.push("intimate dinner");
   if (s.relevance >= 65) reasons.push("matches your profile");

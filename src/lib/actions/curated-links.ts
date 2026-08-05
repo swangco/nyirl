@@ -82,6 +82,7 @@ export async function addCuratedLink(formData: FormData) {
     outOfTown,
     title: preview.title,
     description: preview.description,
+    hostNames: preview.hostNames,
     imageUrl: preview.imageUrl,
     // Scraped date is more reliable than a manually typed one when found —
     // fall back to what the host entered otherwise.
@@ -209,6 +210,7 @@ ${text}
           format: event.format,
           title: preview.title,
           description: preview.description,
+          hostNames: preview.hostNames,
           imageUrl: preview.imageUrl,
           // Scraped date beats the AI's guess from the pasted text, which
           // beats nothing at all.

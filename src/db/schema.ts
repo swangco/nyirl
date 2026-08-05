@@ -287,8 +287,19 @@ export const curatedLinks = pgTable("curated_links", {
   format: text("format").$type<(typeof linkFormatEnum)[number]>().notNull().default("mixer"),
   outOfTown: boolean("out_of_town").notNull().default(false),
   tags: text("tags").array(),
+  /** Organisations credited as running the event, from the listing's structured
+   * data (see lib/og-meta.ts). Host identity is the first thing curation keys
+   * on, and inferring it by scanning prose misattributes badly — a listing that
+   * merely name-drops a company reads as if that company were hosting. Empty
+   * array means the page published none; NULL means we never looked. */
+  hostNames: text("host_names").array(),
   // Semantic-matching vector over the link document (see lib/embeddings.ts). Nullable.
   embedding: vector("embedding", { dimensions: 1536 }),
+  /** The exact text `embedding` was built from, so a stale vector is detectable.
+   * Widening the scraped descriptions changed every link document while leaving
+   * every embedding NOT NULL — invisible to a `WHERE embedding IS NULL` backfill
+   * and therefore silently wrong. Same fix as profiles.embedding_document. */
+  embeddingDocument: text("embedding_document"),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 

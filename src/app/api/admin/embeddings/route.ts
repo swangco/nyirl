@@ -54,18 +54,27 @@ function profileIsStale(p: typeof profiles.$inferSelect): boolean {
   return !p.embedding || p.embeddingDocument !== buildProfileDocument(p);
 }
 
+/** Same rule for links. Widening the scraped descriptions changed every link
+ * document while every embedding stayed NOT NULL, so a NULL-only backfill was
+ * blind to it — the identical failure the profile check exists to prevent. */
+function linkIsStale(l: typeof curatedLinks.$inferSelect): boolean {
+  return !l.embedding || l.embeddingDocument !== buildLinkDocument(l);
+}
+
 async function counts() {
   const [p, l, e] = await Promise.all([
     db.query.profiles.findMany(),
-    db.query.curatedLinks.findMany({ columns: { id: true }, where: isNull(curatedLinks.embedding) }),
+    db.query.curatedLinks.findMany(),
     db.query.events.findMany({ columns: { id: true }, where: isNull(events.embedding) }),
   ]);
   const stale = p.filter(profileIsStale);
+  const staleLinks = l.filter(linkIsStale);
   return {
     profiles: stale.length,
     profilesMissingVector: stale.filter((r) => !r.embedding).length,
     profilesStaleDocument: stale.filter((r) => !!r.embedding).length,
-    curatedLinks: l.length,
+    curatedLinks: staleLinks.length,
+    curatedLinksStaleDocument: staleLinks.filter((r) => !!r.embedding).length,
     events: e.length,
   };
 }
@@ -118,18 +127,17 @@ export async function POST(req: Request) {
   // costs ~$0.000005, so comparing and re-embedding is cheaper than the risk of
   // silently ranking on stale vectors.
   //
-  // `?force=1` additionally re-embeds links and events, which have no document
-  // column to compare against.
+  // `?force=1` additionally re-embeds events, which have no document column to
+  // compare against.
   const force = new URL(req.url).searchParams.get("force") === "1";
 
-  const [allProfiles, linkRows, eventRows] = await Promise.all([
+  const [allProfiles, allLinks, eventRows] = await Promise.all([
     db.query.profiles.findMany(),
-    db.query.curatedLinks.findMany(
-      force ? undefined : { where: isNull(curatedLinks.embedding) },
-    ),
+    db.query.curatedLinks.findMany(),
     db.query.events.findMany(force ? undefined : { where: isNull(events.embedding) }),
   ]);
   const profileRows = force ? allProfiles : allProfiles.filter(profileIsStale);
+  const linkRows = force ? allLinks : allLinks.filter(linkIsStale);
 
   const [profileVecs, linkVecs, eventVecs] = await Promise.all([
     embedTexts(profileRows.map(buildProfileDocument)),
@@ -154,7 +162,10 @@ export async function POST(req: Request) {
   for (let i = 0; i < linkRows.length; i++) {
     const v = linkVecs[i];
     if (!v) continue;
-    await db.update(curatedLinks).set({ embedding: v }).where(eq(curatedLinks.id, linkRows[i].id));
+    await db
+      .update(curatedLinks)
+      .set({ embedding: v, embeddingDocument: buildLinkDocument(linkRows[i]) })
+      .where(eq(curatedLinks.id, linkRows[i].id));
     embeddedLinks++;
   }
 
