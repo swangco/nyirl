@@ -128,7 +128,7 @@ export default async function DiscoverPage({
       // fit (they pin above the scored links regardless), so mirroring `score`
       // here is correct — it just satisfies the LinkScore shape describeFit
       // takes, and nothing sorts on it.
-      { score, sortKey: score, relevance: 0, quality: 0, boosts: 0, usedEmbedding: false },
+      { score, sortKey: score, relevance: 0, relevancePrecise: 0, quality: 0, boosts: 0, usedEmbedding: false },
     );
     return {
       kind: "event" as const,

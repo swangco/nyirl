@@ -692,8 +692,17 @@ export type LinkScore = {
    * Ranking on the unrounded value recovered ~2 points of P@5 (41.2 -> 43.2).
    */
   sortKey: number;
-  /** 0-100 relevance component (semantic or keyword). */
+  /** 0-100 relevance component (semantic or keyword), ROUNDED for display. */
   relevance: number;
+  /**
+   * The same relevance UNROUNDED, as actually used in the blend.
+   *
+   * Exposed because anything explaining the score has to reproduce it exactly:
+   * multiplying the rounded value by 0.8 drifts up to 0.4 points from the real
+   * total, which is enough to print an equation that doesn't equal the number
+   * printed beside it.
+   */
+  relevancePrecise: number;
   /** 0-100 quality prior (CQS). */
   quality: number;
   /** Additive rule-based boosts folded into the score. */
@@ -731,6 +740,7 @@ export function scoreCuratedLink(
       score: quality,
       sortKey: quality,
       relevance: 0,
+      relevancePrecise: 0,
       quality,
       boosts: 0,
       usedEmbedding: false,
@@ -758,6 +768,7 @@ export function scoreCuratedLink(
     score: Math.round(sortKey),
     sortKey,
     relevance: Math.round(relevancePrecise),
+    relevancePrecise,
     quality,
     boosts,
     usedEmbedding,
@@ -788,3 +799,103 @@ export function describeFit(link: ScorableLink, s: LinkScore): { tier: string; r
 
   return { tier, reason: reasons.slice(0, 2).join(" · ") };
 }
+
+// ---------------------------------------------------------------------------
+// Explainability
+//
+// The inspector UI must never re-derive the arithmetic — a second copy of these
+// numbers would drift from the real one the moment either changed, and a score
+// explanation that disagrees with the score is worse than no explanation. So
+// the breakdown is produced HERE, from the same constants the scorer uses.
+// ---------------------------------------------------------------------------
+
+export type QualityComponent = {
+  key: "host" | "exclusivity" | "format" | "locality" | "intimacy";
+  label: string;
+  earned: number;
+  max: number;
+  /** Plain-language reason this many points were earned. */
+  detail: string;
+};
+
+/** Itemised Curation Quality Score. Sums to computeCurationQualityScore(link). */
+export function explainCurationQuality(
+  link: Pick<CuratedLink, "title" | "description" | "exclusivity" | "format" | "outOfTown"> & {
+    hostNames?: string[] | null;
+  },
+): QualityComponent[] {
+  const text = `${link.title ?? ""} ${link.description ?? ""}`;
+  const hostKey = resolveTierOneHost(link);
+  const declared = matchTierOneHostName(link.hostNames ?? null);
+  const count = extractAttendeeCount(text);
+  const exclusivity = EXCLUSIVITY_POINTS[link.exclusivity] ?? EXCLUSIVITY_POINTS.capped;
+  const format = FORMAT_POINTS[link.format] ?? FORMAT_POINTS.mixer;
+
+  return [
+    {
+      key: "host",
+      label: "Host",
+      earned: hostKey ? HOST_TIER_POINTS.tier_1 : HOST_TIER_POINTS.unknown,
+      max: HOST_TIER_POINTS.tier_1,
+      detail: hostKey
+        ? declared
+          ? `“${hostKey}” — named as the organiser on the listing`
+          : `“${hostKey}” — inferred from the text, no organiser published`
+        : link.hostNames?.length
+          ? `organiser is “${link.hostNames[0]}”, not on the tier-1 list`
+          : "no recognised host",
+    },
+    {
+      key: "exclusivity",
+      label: "Exclusivity",
+      earned: exclusivity,
+      max: EXCLUSIVITY_POINTS.invite_only,
+      detail:
+        link.exclusivity === "invite_only"
+          ? "invite only"
+          : link.exclusivity === "open"
+            ? "open to the public"
+            : "capped headcount",
+    },
+    {
+      key: "format",
+      label: "Format",
+      earned: format,
+      max: FORMAT_POINTS.dinner,
+      detail: `${link.format} — sit-down formats score above expos`,
+    },
+    {
+      key: "locality",
+      label: "Locality",
+      earned: link.outOfTown ? LOCALITY_POINTS.out_of_town : LOCALITY_POINTS.nyc,
+      max: LOCALITY_POINTS.nyc,
+      detail: link.outOfTown ? "outside New York" : "in New York",
+    },
+    {
+      key: "intimacy",
+      label: "Room size",
+      earned:
+        count === null
+          ? INTIMACY_POINTS.unknown
+          : count <= 50
+            ? INTIMACY_POINTS.small
+            : count <= 150
+              ? INTIMACY_POINTS.medium
+              : INTIMACY_POINTS.large,
+      max: INTIMACY_POINTS.small,
+      detail:
+        count === null
+          ? "headcount not published — treated as mid-sized"
+          : `~${count} people`,
+    },
+  ];
+}
+
+/** The blend weights, exposed so the UI can state them rather than hardcode them. */
+export const SCORE_WEIGHTS = {
+  relevance: RELEVANCE_WEIGHT,
+  quality: QUALITY_WEIGHT,
+} as const;
+
+/** Calibration band, exposed so the UI can explain what a cosine maps to. */
+export const COSINE_BAND = { floor: COSINE_FLOOR, ceil: COSINE_CEIL } as const;
