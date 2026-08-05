@@ -2,6 +2,8 @@
 
 A living document capturing where NY IRL is headed and why, built through a PM-style discovery conversation on 2026-07-22. Update it as the vision sharpens — this isn't meant to be final.
 
+> **Superseded (2026-07-30):** the visual-identity row below (sharp/premium, Luma-Vercel register) and the signed-out landing treatment were replaced by `docs/2026-07-27-ia-and-funnel-rearchitecture.md` — a quieter, warm-paper editorial register (terracotta accent, Manrope/Lora typefaces) rather than the cool-neutral sans-only direction this doc originally called for. Shipped as-is at Serena's direction. Everything else in this doc (audience, curation model, success metric, roadmap) still holds.
+
 ## 1. Vision & problem
 
 NY IRL is a **personal concierge for discovering NYC tech events** — not a general "anything happening in the city" app, and not, at its core, about who happens to be hosting a given event. The value is the matching: someone builds a profile once, and the algorithm (not a generic feed) tells them what's actually worth their time in the tech/founder/investor/builder scene.
@@ -24,7 +26,8 @@ That's a meaningfully specific positioning. It's not "Partiful for NYC" (social-
 | **Core experience** | Two equally-weighted doors into the same thing: the live website (browse-first) and the weekly digest (email-first). Neither is the "real" product with the other as an afterthought. |
 | **Curation model** | Phase 1 (now): Serena manually curates. Phase 2: other hosts submit their own events into the same system. The "Host" tab is the seed of that, not a permanent side feature. |
 | **Success metric** | **Reach and reputation, not revenue.** Success looks like NY IRL becoming *the* recognized resource for curated NYC tech events — not a subscription business, not ad-supported, not optimized for monetization. |
-| **Visual identity** | Sharp, premium, confident — the register of Luma or Vercel's own site: light background, high contrast, geometric sans type doing the work, generous whitespace, product content as the hero (not marketing fluff). Explicitly **not** a luxury-retail aesthetic (no brass/serif/boutique visual language) — that direction was tested and rejected in favor of "sharp tech done well" over "quiet luxury." Visible algorithmic scores (the "82 / fit" numbers) are a **feature**, not something to hide — they reinforce that this is a real matching engine, not just a nicely-formatted list. |
+| **Visual identity** | **Superseded 2026-07-30** — quiet and editorial, not sharp/premium Luma-Vercel. Warm paper background, soft black text, one terracotta accent, restrained serif (Lora) titles, hairline structure instead of cards. One saturated moment at the front door (the gradient landing); restraint everywhere inside. Full spec: `docs/2026-07-27-ia-and-funnel-rearchitecture.md`. The "sharp tech done well" register described below was the working direction through 2026-07-22 but was revisited in favor of this warmer, quieter register — kept here for history, not as current direction. Visible algorithmic scores are still a **feature**, not hidden: the enlarged `FitScore` numeral (`text-2xl`) is the one deliberately loud element on the /discover screen, same principle as the old "82 / fit" framing, just restyled. |
+| ~~**Visual identity (pre-2026-07-30)**~~ | Sharp, premium, confident — the register of Luma or Vercel's own site: light background, high contrast, geometric sans type doing the work, generous whitespace, product content as the hero (not marketing fluff). Explicitly **not** a luxury-retail aesthetic (no brass/serif/boutique visual language) — that direction was tested and rejected in favor of "sharp tech done well" over "quiet luxury." |
 
 ## 4. Gaps & tensions (and why they matter)
 
@@ -42,5 +45,5 @@ That's a meaningfully specific positioning. It's not "Partiful for NYC" (social-
 ## Open questions (still to resolve)
 
 - What does "onboarding a user" concretely look like — direct outreach, a signup push at an event, something else?
-- Once the visual pass happens, does the Recommended-for-you card layout need to change shape too, or just its type/color treatment?
+- ~~Once the visual pass happens, does the Recommended-for-you card layout need to change shape too, or just its type/color treatment?~~ **Resolved (2026-07-23):** shape did change. Cards now distinguish the two item types at a glance — hosted NY IRL events carry a solid "NY IRL" pill (pinned track record), external picks show a "Curated link" out-arrow label — with a thumbnail/placeholder, tightened metadata row, and the fit/quality score kept prominent on the right. Shared `RecommendationCard` component drives both the homepage and category lists.
 - At what subscriber count does the digest become worth turning on for real?

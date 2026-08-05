@@ -17,6 +17,7 @@ import {
 import { saveProfile } from "@/lib/actions/profile";
 import { isPrefetchRequest, logImpressions } from "@/lib/interactions";
 import { trackedHref } from "@/lib/links";
+import { isProfileComplete as checkProfileComplete } from "@/lib/profile-completeness";
 import { computeStructuralScore, describeFit, scoreCuratedLink } from "@/lib/scoring";
 import { EmptyState } from "@/components/empty-state";
 import { FitScore, ReasonChip } from "@/components/fit-score";
@@ -90,10 +91,7 @@ export default async function ProfilePage({
   // uses so the numbers here can't diverge from what Discover shows. Gated on
   // profile completeness, same as the homepage and digest, so the three
   // surfaces agree on when a user is scorable.
-  const isProfileComplete =
-    !!profile?.fullName &&
-    (profile.profileType?.length ?? 0) > 0 &&
-    !!profile.bioBlurb?.trim();
+  const isProfileComplete = checkProfileComplete(profile);
   const now = new Date();
   const recommendations = profile && isProfileComplete
     ? [
@@ -155,13 +153,24 @@ export default async function ProfilePage({
 
   return (
     <PageShell width="narrow">
+      <p className="mb-2 font-mono text-xs uppercase tracking-[0.16em] text-foreground-soft">
+        Your profile
+      </p>
+      <h1 className="mb-2 text-3xl font-bold tracking-tight text-balance">
+        Build once, matched forever
+      </h1>
+      <p className="mb-8 text-sm leading-relaxed text-foreground-soft">
+        This is the profile every event is scored against. The more you share,
+        the sharper your recommendations.
+      </p>
+
       {saved && (
         <div className="mb-6 rounded-md border border-line bg-surface px-4 py-2.5 text-sm text-foreground">
           Profile saved.
         </div>
       )}
       {required && (
-        <div className="mb-6 rounded-md border border-accent/30 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
+        <div className="mb-6 rounded-md border border-foreground/20 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
           Complete your profile before applying to an event.
         </div>
       )}
@@ -345,7 +354,7 @@ export default async function ProfilePage({
           {profile?.resumeUrl && (
             <a
               href={profile.resumeUrl}
-              className="text-sm text-accent underline underline-offset-2"
+              className="text-sm font-medium text-foreground underline underline-offset-4 decoration-line hover:decoration-foreground"
               target="_blank"
             >
               Current resume
@@ -361,7 +370,7 @@ export default async function ProfilePage({
 
         <button
           type="submit"
-          className="mt-2 self-start rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          className="mt-2 self-start rounded-full bg-foreground px-6 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
         >
           Save profile
         </button>
@@ -412,7 +421,7 @@ export default async function ProfilePage({
           {isHost && (
             <Link
               href="/curate"
-              className="mt-6 inline-block text-sm text-accent underline underline-offset-2"
+              className="mt-6 inline-block text-sm font-medium text-foreground underline underline-offset-4 decoration-line hover:decoration-foreground"
             >
               Manage what you host ({allLinks.length} link
               {allLinks.length === 1 ? "" : "s"}) →

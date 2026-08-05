@@ -9,7 +9,7 @@ export function FitScore({ score, tier }: { score: number; tier: string }) {
       <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-foreground-soft/70">
         {tier}
       </div>
-      <div className="font-mono text-lg font-semibold tabular-nums text-foreground">
+      <div className="font-mono text-2xl font-semibold tabular-nums text-foreground">
         {score}
       </div>
     </div>

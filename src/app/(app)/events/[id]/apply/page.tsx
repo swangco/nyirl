@@ -130,15 +130,15 @@ export default async function ApplyPage({
       )}
 
       {required && (
-        <div className="mb-6 rounded-md border border-accent/30 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
+        <div className="mb-6 rounded-md border border-foreground/20 bg-accent-soft px-4 py-2.5 text-sm text-foreground">
           Complete your profile before applying.
         </div>
       )}
 
       {!profile ? (
         <a
-          href="/profile"
-          className="inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+          href="/apply"
+          className="inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
         >
           Complete your profile to apply
         </a>
@@ -155,7 +155,7 @@ export default async function ApplyPage({
           </p>
           <button
             type="submit"
-            className="rounded-full bg-foreground px-6 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-hover"
+            className="rounded-full bg-foreground px-6 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-accent-hover"
           >
             Apply to attend
           </button>

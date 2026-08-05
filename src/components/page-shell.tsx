@@ -6,6 +6,7 @@ const WIDTHS = {
   narrow: "max-w-xl",
   prose: "max-w-2xl",
   wide: "max-w-3xl",
+  discover: "max-w-4xl",
 } as const;
 
 export function PageShell({

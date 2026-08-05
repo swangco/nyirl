@@ -1,14 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f9f7f1;
-  --surface: #fdfcf8;
-  --foreground: #0a0a0a;
-  --foreground-soft: #62748e;
-  --line: #e5e2d5;
-  --accent: #101828;
-  --accent-hover: #2a3444;
-  --accent-soft: #10182814;
+  --background: #F6F5F3;
+  --surface: #FDFCFA;
+  --foreground: #1F1F1F;
+  --foreground-soft: #6C6C6C;
+  --foreground-faint: #B4B2A9;
+  --line: #E0DED9;
+  --accent: #C6714C;
+  --accent-hover: #7B553A;
+  --accent-soft: #C6714C14;
+  --cream: #E9E0D4;
+  --radius: 0.625rem;
   /* Warm paper is intentional — pin the scheme so native controls match. */
   color-scheme: light;
 }
@@ -18,20 +21,26 @@
   --color-surface: var(--surface);
   --color-foreground: var(--foreground);
   --color-foreground-soft: var(--foreground-soft);
+  --color-foreground-faint: var(--foreground-faint);
   --color-line: var(--line);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
+  --color-cream: var(--cream);
   --font-sans: var(--font-manrope);
   --font-serif: var(--font-lora);
   --font-mono: var(--font-geist-mono);
-  --font-geist: var(--font-geist);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-manrope), Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* One keyboard-focus treatment across every interactive element — cards, nav,
