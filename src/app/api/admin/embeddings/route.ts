@@ -20,7 +20,9 @@ import {
  *
  *   GET  — status: is a key visible, does a live call succeed, how many rows
  *          still need vectors. Never returns the key or any vector.
- *   POST — backfill every row missing an embedding. Idempotent.
+ *   POST — backfill every row missing an embedding, AND re-embed any profile
+ *          whose stored document no longer matches what the code builds today.
+ *          Idempotent: a second call with nothing stale embeds nothing.
  *
  * Auth: the single host's session, or a `Bearer <CRON_SECRET>` header so it can
  * be driven from a terminal without a browser sign-in.
@@ -37,13 +39,44 @@ async function authorize(req: Request): Promise<boolean> {
   return session?.user?.id === HOST_USER_ID;
 }
 
+/**
+ * A profile needs work if it has no vector, OR if the vector it has was built
+ * from different text than buildProfileDocument produces today.
+ *
+ * The second case is the one that matters and the one a NULL-only backfill can
+ * never see. When resume text was removed from the profile document, every
+ * existing vector became mostly-stale content while staying NOT NULL — so the
+ * headline ranking fix would not have taken effect in production at all.
+ * `embedding_document` is NULL on rows embedded before the column existed,
+ * which reads correctly as "unknown provenance, re-embed".
+ */
+function profileIsStale(p: typeof profiles.$inferSelect): boolean {
+  return !p.embedding || p.embeddingDocument !== buildProfileDocument(p);
+}
+
+/** Same rule for links. Widening the scraped descriptions changed every link
+ * document while every embedding stayed NOT NULL, so a NULL-only backfill was
+ * blind to it — the identical failure the profile check exists to prevent. */
+function linkIsStale(l: typeof curatedLinks.$inferSelect): boolean {
+  return !l.embedding || l.embeddingDocument !== buildLinkDocument(l);
+}
+
 async function counts() {
   const [p, l, e] = await Promise.all([
-    db.query.profiles.findMany({ columns: { id: true }, where: isNull(profiles.embedding) }),
-    db.query.curatedLinks.findMany({ columns: { id: true }, where: isNull(curatedLinks.embedding) }),
+    db.query.profiles.findMany(),
+    db.query.curatedLinks.findMany(),
     db.query.events.findMany({ columns: { id: true }, where: isNull(events.embedding) }),
   ]);
-  return { profiles: p.length, curatedLinks: l.length, events: e.length };
+  const stale = p.filter(profileIsStale);
+  const staleLinks = l.filter(linkIsStale);
+  return {
+    profiles: stale.length,
+    profilesMissingVector: stale.filter((r) => !r.embedding).length,
+    profilesStaleDocument: stale.filter((r) => !!r.embedding).length,
+    curatedLinks: staleLinks.length,
+    curatedLinksStaleDocument: staleLinks.filter((r) => !!r.embedding).length,
+    events: e.length,
+  };
 }
 
 export async function GET(req: Request) {
@@ -77,7 +110,7 @@ export async function GET(req: Request) {
     liveCall,
     rowsMissingEmbeddings: missing,
     ready: keyVisible && liveCall.ok,
-    hint: "POST to this URL with the same auth to backfill missing embeddings.",
+    hint: "POST to this URL with the same auth to backfill missing and stale embeddings.",
   });
 }
 
@@ -87,11 +120,24 @@ export async function POST(req: Request) {
     return Response.json({ error: "No OpenAI key visible to this deployment." }, { status: 400 });
   }
 
-  const [profileRows, linkRows, eventRows] = await Promise.all([
-    db.query.profiles.findMany({ where: isNull(profiles.embedding) }),
-    db.query.curatedLinks.findMany({ where: isNull(curatedLinks.embedding) }),
-    db.query.events.findMany({ where: isNull(events.embedding) }),
+  // Profiles repair themselves: the default pass re-embeds anything whose
+  // stored document doesn't match what we'd build now, so a change to
+  // buildProfileDocument is healed by the ordinary backfill instead of by a
+  // manual flag that nothing in the deploy path invokes. Embedding a profile
+  // costs ~$0.000005, so comparing and re-embedding is cheaper than the risk of
+  // silently ranking on stale vectors.
+  //
+  // `?force=1` additionally re-embeds events, which have no document column to
+  // compare against.
+  const force = new URL(req.url).searchParams.get("force") === "1";
+
+  const [allProfiles, allLinks, eventRows] = await Promise.all([
+    db.query.profiles.findMany(),
+    db.query.curatedLinks.findMany(),
+    db.query.events.findMany(force ? undefined : { where: isNull(events.embedding) }),
   ]);
+  const profileRows = force ? allProfiles : allProfiles.filter(profileIsStale);
+  const linkRows = force ? allLinks : allLinks.filter(linkIsStale);
 
   const [profileVecs, linkVecs, eventVecs] = await Promise.all([
     embedTexts(profileRows.map(buildProfileDocument)),
@@ -103,7 +149,12 @@ export async function POST(req: Request) {
   for (let i = 0; i < profileRows.length; i++) {
     const v = profileVecs[i];
     if (!v) continue;
-    await db.update(profiles).set({ embedding: v }).where(eq(profiles.id, profileRows[i].id));
+    // Record the document alongside the vector, so saveProfile's
+    // skip-if-unchanged check has an accurate reference point afterwards.
+    await db
+      .update(profiles)
+      .set({ embedding: v, embeddingDocument: buildProfileDocument(profileRows[i]) })
+      .where(eq(profiles.id, profileRows[i].id));
     embeddedProfiles++;
   }
 
@@ -111,7 +162,10 @@ export async function POST(req: Request) {
   for (let i = 0; i < linkRows.length; i++) {
     const v = linkVecs[i];
     if (!v) continue;
-    await db.update(curatedLinks).set({ embedding: v }).where(eq(curatedLinks.id, linkRows[i].id));
+    await db
+      .update(curatedLinks)
+      .set({ embedding: v, embeddingDocument: buildLinkDocument(linkRows[i]) })
+      .where(eq(curatedLinks.id, linkRows[i].id));
     embeddedLinks++;
   }
 

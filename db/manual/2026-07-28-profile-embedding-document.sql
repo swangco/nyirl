@@ -1,0 +1,13 @@
+-- Adds profiles.embedding_document.
+--
+-- Why this is a hand-written statement and not a drizzle-kit migration: this
+-- project has no migrations directory and uses `npm run db:push`. Generating a
+-- migration here produces a 160-line baseline with 11 CREATE TABLEs, which is a
+-- workflow change, not a column add — and a risky one to land while a second
+-- developer is working on main.
+--
+-- MUST run before deploying this branch. Drizzle selects every column, so until
+-- it exists, EVERY profiles query fails and the app is down, not degraded.
+--
+-- Idempotent; safe to run more than once.
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS embedding_document text;

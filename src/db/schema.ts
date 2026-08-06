@@ -170,6 +170,15 @@ export const profiles = pgTable("profiles", {
   // interests). Nullable: populated on save when OPENAI_API_KEY is set; scoring
   // falls back to keyword fit when absent. See lib/embeddings.ts.
   embedding: vector("embedding", { dimensions: 1536 }),
+  /**
+   * The exact document text `embedding` was computed from. Lets a save skip the
+   * embedding call when the text is unchanged, WITHOUT the skip latching on
+   * failure: it's only written when an embedding actually succeeds, so a failed
+   * call leaves this stale, the next save sees a mismatch, and it retries.
+   * Comparing against the rebuilt profile instead would silently agree after a
+   * failure and never re-embed.
+   */
+  embeddingDocument: text("embedding_document"),
   digestOptOut: boolean("digest_opt_out").notNull().default(false),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
@@ -278,8 +287,19 @@ export const curatedLinks = pgTable("curated_links", {
   format: text("format").$type<(typeof linkFormatEnum)[number]>().notNull().default("mixer"),
   outOfTown: boolean("out_of_town").notNull().default(false),
   tags: text("tags").array(),
+  /** Organisations credited as running the event, from the listing's structured
+   * data (see lib/og-meta.ts). Host identity is the first thing curation keys
+   * on, and inferring it by scanning prose misattributes badly — a listing that
+   * merely name-drops a company reads as if that company were hosting. Empty
+   * array means the page published none; NULL means we never looked. */
+  hostNames: text("host_names").array(),
   // Semantic-matching vector over the link document (see lib/embeddings.ts). Nullable.
   embedding: vector("embedding", { dimensions: 1536 }),
+  /** The exact text `embedding` was built from, so a stale vector is detectable.
+   * Widening the scraped descriptions changed every link document while leaving
+   * every embedding NOT NULL — invisible to a `WHERE embedding IS NULL` backfill
+   * and therefore silently wrong. Same fix as profiles.embedding_document. */
+  embeddingDocument: text("embedding_document"),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 
@@ -324,6 +344,45 @@ export const interactionSourceEnum = [
   "digest",
   "apply",
 ] as const;
+
+/**
+ * Links Serena removed, kept rather than destroyed.
+ *
+ * `removeCuratedLink` was a hard DELETE, so every rejection was lost. That
+ * matters because curation is a DISCARD machine — roughly 80% of what she sees
+ * is thrown away — and a filter cannot be evaluated on a table containing only
+ * the things it kept. (Verified: zero interaction_events point at a missing
+ * link, so nothing has actually been lost yet. This stops future loss.)
+ *
+ * Deliberately a SEPARATE TABLE rather than a `removed_at` flag on
+ * curated_links. A flag is fail-open: nine queries read curated_links and seven
+ * of them would fail SILENTLY if they forgot the filter — the feed would rank
+ * removed links, the digest would email them, and the impression logger would
+ * pollute the only behavioural dataset the project has. An archive table is
+ * fail-safe: no existing query can see these rows at all.
+ */
+export const removedLinks = pgTable("removed_links", {
+  id: text("id").primaryKey(),
+  sourceUrl: text("source_url").notNull(),
+  title: text("title"),
+  description: text("description"),
+  category: text("category"),
+  hostNames: text("host_names").array(),
+  tags: text("tags").array(),
+  // The full row, so a restore is LOSSLESS. Learned the hard way: an archive
+  // that stores only the "interesting" columns silently drops eventDate,
+  // exclusivity, format, locality and image on the way back, which quietly
+  // downgrades a restored listing's quality score.
+  imageUrl: text("image_url"),
+  eventDate: timestamp("event_date", { mode: "date" }),
+  exclusivity: text("exclusivity"),
+  format: text("format"),
+  outOfTown: boolean("out_of_town"),
+  /** Why it was removed, when we know. Free text — this is training data. */
+  reason: text("reason"),
+  addedAt: timestamp("added_at", { mode: "date" }),
+  removedAt: timestamp("removed_at", { mode: "date" }).notNull().defaultNow(),
+});
 
 export const interactionEvents = pgTable(
   "interaction_events",

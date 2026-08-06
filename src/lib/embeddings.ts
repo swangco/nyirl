@@ -104,21 +104,31 @@ type Profile = typeof profiles.$inferSelect;
 type CuratedLink = typeof curatedLinks.$inferSelect;
 type Event = typeof events.$inferSelect;
 
-/** The text we embed for a profile: everything that signals who they are and
- * what they want. Resume text is included here — until now it was only ever
- * read in the one apply-time Haiku call, despite being the richest signal we
- * store. Truncated so one long resume can't dominate the vector. */
+/**
+ * The text we embed for a profile: who they are and what they're working on.
+ *
+ * Resume text is DELIBERATELY EXCLUDED. It used to be appended (truncated at 6k
+ * chars) on the theory that it was the richest signal we store. Measured on the
+ * evaluation corpus with real resumes for all 50 users, including it is a
+ * regression: NDCG@10 -4.6pp (paired t = -2.22, 32 users worse vs 16 better),
+ * MRR -5.0, FP@10 +1.0. Truncating to 800 chars does NOT recover it (t = 1.37,
+ * noise), because the problem isn't length — it's that a resume is mostly
+ * *career history*, and history is topically different from what someone wants
+ * to do next. A GPU-infra founder's resume is four years of enterprise Java at
+ * a bank, and that drags their vector toward the wrong rooms.
+ *
+ * Excluding it also makes documents uniform (~420 chars instead of ~3,650), so
+ * cosine scores are comparable ACROSS users — which per-user thresholds and the
+ * digest's relative band depend on — and cuts embedding cost ~8x.
+ *
+ * The resume is not wasted: the host's applicant screening reads it directly
+ * (computeSemanticScore takes resumeText as its own argument), which is where
+ * career history genuinely belongs.
+ */
 export function buildProfileDocument(
   profile: Pick<
     Profile,
-    | "fullName"
-    | "title"
-    | "company"
-    | "profileType"
-    | "bioBlurb"
-    | "interests"
-    | "tags"
-    | "resumeTextExtracted"
+    "fullName" | "title" | "company" | "profileType" | "bioBlurb" | "interests" | "tags"
   >,
 ): string {
   const parts: string[] = [];
@@ -129,9 +139,6 @@ export function buildProfileDocument(
   if (profile.bioBlurb?.trim()) parts.push(profile.bioBlurb.trim());
   if (profile.interests?.length) parts.push(`Interests: ${profile.interests.join(", ")}`);
   if (profile.tags?.length) parts.push(profile.tags.join(", "));
-  if (profile.resumeTextExtracted?.trim()) {
-    parts.push(`Resume: ${profile.resumeTextExtracted.trim().slice(0, 6000)}`);
-  }
   return parts.join("\n");
 }
 

@@ -1,0 +1,320 @@
+# NY IRL — Recommender system: embedding plan, cost model, and evaluation
+
+Date: 2026-07-27. Scope: backend only (`src/lib`, `scripts/`, `src/db`) — a second
+developer owns UI/UX on `main` today, so nothing here touches components or pages.
+
+## 1. Where the recommender stands
+
+Live in production today:
+
+```
+score(user, item) = clamp(0.6·relevance + 0.4·quality + boosts, 0, 100)
+
+  relevance = 100·calibrate(cosine(profileVec, itemVec))   ← pgvector, text-embedding-3-small
+              → falls back to keyword fit when either vector is missing
+  quality   = Curation Quality Score (host tier, exclusivity, format, locality, intimacy)
+  boosts    = interest-tag overlap (+, capped 20) + gender-orientation match (+15)
+```
+
+All 48 production rows are embedded (4 profiles, 41 links, 3 events). Applicant
+scoring uses the same vectors (`applicantSemanticScore`), so no LLM call sits in
+the apply path.
+
+## 2. The cost model — and where the real cost actually is
+
+`text-embedding-3-small` is **$0.02 / 1M tokens**. Measured document sizes:
+
+| Document | Typical tokens | Cost per embedding |
+|---|---|---|
+| Event / curated link | 100–200 | $0.000003 |
+| Profile (no resume) | 120–300 | $0.000005 |
+| Profile (with resume, truncated at 6k chars) | ~1,500 | $0.00003 |
+
+Extrapolated:
+
+| Scale | Embedding spend |
+|---|---|
+| Today (48 rows) | **$0.001 one-time** |
+| 10k users + 5k events | **~$0.15 one-time**, then cents/month |
+| 100k users + 50k events | **~$1.50 one-time**, ~$0.05/mo steady-state |
+
+**Conclusion: embedding token cost is not a real cost at any plausible scale.**
+It would be dishonest to optimize it as if it were. The costs that actually
+bite are, in order:
+
+1. **Request-path latency.** Embedding on profile save added ~300ms to every
+   save, including saves that changed nothing the vector derives from.
+2. **Rate limits / failure blast radius** during bulk backfills.
+3. **Storage and query compute** once the candidate set is large — 1536 dims ×
+   4 bytes = 6KB/row, so 100k rows ≈ 600MB, and a JS cosine over every row per
+   page render does not scale.
+4. **LLM (Haiku) calls**, which are ~1000× the price of an embedding — already
+   moved off the hot path and made host-triggered.
+
+So the optimizations below target latency, resilience, and query cost, not token
+spend.
+
+## 3. Optimizations
+
+### 3.1 Skip unchanged documents (implemented)
+Most profile saves edit fields the vector doesn't derive from (email, LinkedIn,
+headshot, digest opt-in). `saveProfile` now rebuilds the *previous* document from
+the stored row and compares it to the next one; if identical and an embedding
+already exists, the API call is skipped entirely.
+
+Deliberately compares text rather than storing a hash column — same benefit, no
+migration, no merge-conflict surface while another dev is on `main`.
+
+### 3.2 Batching (implemented)
+`embedTexts` chunks at 96 inputs per request (OpenAI caps 2048 inputs / ~300k
+tokens). A failed chunk nulls only its own slots instead of the whole run. Blank
+documents map to `null` rather than being embedded as `" "` — a garbage vector
+stored as non-null would suppress the keyword fallback.
+
+### 3.3 Content-addressed cache (implemented, eval harness)
+`scripts/eval/cache.ts` keys vectors by `sha256(model:dims:text)` and stores them
+float32-base64 (~4× smaller than JSON floats). Re-running the evaluation with
+different *scoring* logic costs $0. This is the same principle as 3.1.
+
+### 3.4 Dimension reduction — measured, not assumed
+`text-embedding-3-*` are Matryoshka models: `dimensions: 512` truncates with
+minimal quality loss and cuts storage/query cost 3×. Rather than guess, the eval
+harness runs both and reports the quality delta (§5). Adopt only if the metric
+cost is negligible.
+
+### 3.5 OpenAI Batch API — deliberately NOT adopted
+50% off, but 24h turnaround and a separate job-polling code path. At $1.50 for a
+100k-row backfill, the saving is $0.75. Not worth the complexity; revisit only if
+a single backfill ever exceeds ~10M tokens.
+
+## 4. When to run embeddings
+
+| Trigger | Path | Rationale |
+|---|---|---|
+| Profile save | inline, **skipped if document unchanged** | Fresh vectors matter immediately for the user's own feed |
+| Curated link add (single + bulk) | inline, batched | Links are insert-only; no re-embed churn |
+| Existing/missing rows | `POST /api/admin/embeddings` | Runs where the key lives; idempotent |
+| Ongoing drift | *(recommended next)* nightly cron sweeping `WHERE embedding IS NULL` | Catches rows written while the key was down |
+
+The inline path is safe because it degrades: any failure returns `null`, the row
+keeps its old vector (or none), and scoring falls back to keyword fit.
+
+## 5. How this is tested
+
+Because there is no click data yet, the ground truth is **blind LLM judges**, not
+the embeddings themselves — otherwise the evaluation would be circular.
+
+**Dataset** (`.context/recsys-eval/`, generated by a 23-agent workflow):
+- **200 events** across 8 themes, written as realistic Luma-style listings with
+  specific audiences, including ~6 deliberately off-target events (HVAC trade
+  show, pet-grooming convention) as distractors.
+- **50 users** across 5 archetypes (founders, engineers, investors, operators,
+  edge cases: job-seekers, designers, lifestyle-led, sparse profiles).
+- Events and users were generated **independently** — no coordination — so the
+  matches aren't true by construction.
+- **Gold labels**: 10 judge agents, each reading the full 200-event catalog,
+  return for every user a ranked top-10 plus 8 explicitly-irrelevant events.
+  Judges never see any embedding output.
+
+**Metrics** (`scripts/eval/metrics.ts`) separate three distinct failure modes:
+
+| Metric | Question it answers |
+|---|---|
+| P@5 / P@10 | Are we surfacing the right things at all? |
+| Recall@10 | How much of what a human would pick do we find? |
+| NDCG@10 | Are they in the right ORDER? (graded by gold rank) |
+| MRR | Is the very first result good? |
+| **FP@10** | Are we surfacing things a human called actively wrong? |
+
+FP@10 is weighted most heavily in judgement: for a curation product, one bad pick
+in the top 5 costs more trust than a good pick landing 6th instead of 2nd.
+
+**Variants compared** — against the *real* production functions, not
+reimplementations: random floor, CQS-only (no personalization), keyword-only, the
+old keyword blend, raw cosine, current production blend, percentile-calibrated
+blend, and a relevance-weight sweep.
+
+Run: `npx tsx scripts/eval/run.ts [--dims 512] [--sweep]`
+
+## 6. Results
+
+Dataset: 200 events × 50 users = 10,000 scored pairs, 50 gold-labelled users.
+All variants measured against the **real** production functions.
+
+```
+variant                          P@5  P@10  R@10  NDCG   MRR FP@10
+------------------------------------------------------------------
+SHIPPED scoreCuratedLink()      41.2  31.8  31.8  40.8  73.6   4.0
+BASELINE 0.6/0.4 @ .15-.55      27.2  21.6  21.6  27.3  59.9   3.0
+random (floor)                   4.0   4.0   4.0   4.3  14.9   4.4
+cqs only (no personalization)    4.8   4.4   4.4   4.6  14.1   2.0
+keyword only                    28.4  23.0  23.0  28.6  55.2   5.6
+keyword blend (old fallback)    16.4  13.4  13.4  14.7  39.5   2.2
+semantic raw cosine             44.8  34.8  34.8  45.3  80.4   5.6
+```
+
+**Net: P@5 +51%, NDCG +49%, MRR +23%; FP@10 3.0 → 4.0.**
+
+### What the numbers actually said
+
+- **The quality weight was the bug.** CQS alone ranks barely above random
+  (P@5 4.8 vs 4.0) because it is deliberately not personalized. At 0.4 it was
+  dominating: the old blend (27.2) scored *worse than keyword matching alone*
+  (28.4). Sweep: 0.6 → 30.4, 0.7 → 37.2, 0.8 → 43.2, 0.9 → 44.8, 1.0 → 46.0.
+- **Rounding manufactured ties.** Integer scores map 200 events onto ~100 values;
+  19 of 20 users had ties inside their own top-10, broken by row order.
+- **Calibration was theatre.** Re-fitting the cosine band to measured percentiles
+  *looked* obviously right and was worth +0.008 P@5 (SE 0.016, t = 0.50). It was
+  reverted — see §7.
+
+### Rejected by the data
+
+- **CQS as a hard floor** on top of relevance: *hurt* precision (44.8 → 40.0) and
+  did not improve FP@10. Rejected.
+- **Reciprocal-rank fusion** of semantic + CQS: collapsed to 16.4. Fusing a
+  near-random ranking 50/50 destroys the signal. Rejected.
+- **512-dimension embeddings**: *not validly measured* — the embed proxy ignores
+  the `dimensions` parameter and returned 1536-dim vectors, so the run was
+  discarded rather than reported. Re-run before making any storage decision.
+
+## 7. What the adversarial review caught
+
+Three real defects in the first version of this change:
+
+1. **A stale-embedding latch** (regression). The skip-if-unchanged optimization
+   used "an embedding exists" as a proxy for "that vector matches this text" — an
+   invariant nothing maintained. One failed embedding call left the old vector
+   with new text, and every later save then saw "unchanged" and never retried;
+   the admin backfill couldn't repair it either (it only fills `NULL`). Now gated
+   on `profiles.embedding_document`, written only on success, so it self-heals.
+2. **The digest cutoff broke in both directions.** The same constant 80 was too
+   strict under the old weights (2 of 4 real users could never receive anything)
+   and too loose under the new ones (an unknown-host out-of-town expo with CQS 18
+   reaches 83.6 on match alone; items clearing 80 with CQS < 50 went 4 → 129).
+   Replaced with a hard quality floor + per-user relative band, and
+   "skip the week" moved to the email level.
+3. **The harness flattered itself.** Its baseline imported `semanticRelevance`
+   from the module under test, so it tracked whatever constants were live — the
+   reported delta was unreproducible and overstated (54% vs the true 51%). The
+   baseline is now pinned to hard-coded constants.
+
+It also correctly flagged that recalibration carried far more risk than value
+(it silently rescales `applicantSemanticScore`, which is **persisted** on
+registrations, so pre- and post-deploy applicants would be ranked on different
+scales) — which is why it was reverted rather than shipped.
+
+## 8. The five known problems: designs, adversarial review, outcomes
+
+Each proposed fix was sent to an adversarial DESIGN reviewer *before* implementation.
+Four of five designs were rejected or replaced. That is the point of the exercise:
+every one of them would have shipped a regression or a no-op.
+
+| # | Problem | Proposed | Verdict | Shipped |
+|---|---|---|---|---|
+| 1 | Sparse profiles / job-seeker mismatch | intent line + canned type text | **rejected** | nothing (see below) |
+| 2 | Résumé swamps the profile vector | truncate 6000 → 800 | **replaced** | remove résumé entirely |
+| 3 | Own-employer events recommended | employer-name demotion | **replaced** | host-brand diversity |
+| 4 | `typeCaps` / `excludeRules` dead | share caps + refill pass | **replaced** | absolute seats, hard ceiling |
+| 5 | Applicant scores frozen | recompute + overwrite | **changed** | recompute, keep audit trail |
+
+### 1 — rejected by measurement
+The reviewer predicted the intent line would *hurt*, because the motivating case
+(a laid-off senior engineer being shown "New Grad Night") is a **seniority**
+failure, not an intent failure — cosine cannot separate "Senior engineer, 4 years
+payments" from "Your First Year as a Backend Engineer", and pushing the vector
+toward hiring vocabulary makes that worse. Measured: **P@5 −2.8pp, paired
+t = −2.45, 8 users worse vs 1 better.** Not shipped.
+
+The canned per-type text for sparse profiles is *unmeasurable* on this corpus —
+every synthetic user has a real bio — so shipping it would have been shipping
+blind. Deferred until the corpus contains genuinely sparse users.
+
+### 2 — the fix was the opposite of the proposal
+With résumés added for all 50 users, including a 6,000-char résumé measured as a
+regression (**NDCG −4.6pp, t = −2.22**), and truncating to 800 did **not** recover
+it (t = 1.37). The problem isn't length, it's that a résumé is mostly *career
+history*, which is topically different from what someone wants next. Résumé text
+was removed from the discovery vector entirely; the host's applicant screening
+still reads it directly.
+
+### 3 — wrong by construction
+An employer rule can't be right: another employee of the same company may
+legitimately want that event, `curated_links` has no host field, and a company
+name appears in speaker bios and ordinary prose. Replaced with per-host
+diversity, which fires for every user rather than only those whose employer
+hosts events. Reported honestly: **directionally positive on all three metrics,
+none clearing |t| > 2.** Applied only because its downside is one-sided.
+
+### 4 — the ceiling has to actually hold
+The reviewer broke the first design three ways: `0.15 × 6 seats` floors to zero
+(turning "about one investor" into a ban); the "never leave seats empty" refill
+pass cancelled the cap exactly when it bound (11/16 investors against a 15% cap);
+and resolving primary type against `target_types` let anyone dodge a cap by
+ticking a second box — on the live event the capped type isn't in the criteria at
+all. All three are now regression tests (`npm run test:cohort`).
+
+### 5 — premise was partly wrong
+The reviewer showed there are **zero rank inversions** in the live data, and that
+for events with `NULL criteriaWeights` the structural score is a constant 50, so
+recomputing changes nothing there. Scores are recomputed and displayed, but the
+stored values are kept as the audit trail of what the host actually saw, with
+drift surfaced as "was N".
+
+## 9. Deploy steps
+
+**1. Add the columns FIRST — this is not optional.** Drizzle selects every
+column, so until these exist the matching queries throw and the app is down, not
+degraded.
+
+```
+psql "$DATABASE_URL" -f db/manual/2026-07-28-profile-embedding-document.sql
+psql "$DATABASE_URL" -f db/manual/2026-08-05-curated-link-host-names.sql
+```
+
+Hand-written rather than a drizzle-kit migration because this project has no
+migrations directory and uses `db:push`; generating one produces a 160-line
+baseline with 11 `CREATE TABLE`s, which is a workflow change, not a column add.
+Already applied to the live database; the statement is idempotent.
+
+**2. Re-embed.** Removing resume text from the profile document made every
+existing vector stale-but-not-null, which a `WHERE embedding IS NULL` backfill
+can never see. Both backfill paths now compare the stored `embedding_document`
+to what the code builds today and repair the difference, so the ordinary call
+is enough:
+
+```
+curl -X POST -H "authorization: Bearer $CRON_SECRET" \
+  "https://<deployment>/api/admin/embeddings"
+```
+
+`GET` on the same URL reports `profilesMissingVector`, `profilesStaleDocument`
+and `curatedLinksStaleDocument` separately, so the repair can be verified rather
+than assumed. **All 40 links are currently stale** — their descriptions were
+widened from ~157 to ~1,214 chars on 2026-08-05 but their vectors still come
+from the truncated text. Production's endpoint predates the `force` flag and
+`/api/admin/embed` doesn't exist there, so this cannot be done before deploy. Run it *after*
+deploy: while `main` still builds documents with resume text, the two would
+disagree and re-embed each other on every save.
+
+## 10. Adversarial review, round 2
+
+After implementation, a reviewer with live-database access re-audited the branch
+and confirmed **8 defects**; 7 needed code changes (commit `08acb1f`). The three
+that would have been worst in front of a real host:
+
+- **Exclusion flags fired on the target audience.** On the live event's own
+  rules, every investor and operator was flagged as "not currently building a
+  company" — on an event whose `typeCaps` deliberately reserve seats for them.
+  The caps UI and the flag UI contradicted each other on one screen.
+- **Brand diversity was reverted.** It shipped on the argument that its downside
+  was one-sided. Run over the live 41-link corpus, it demoted a listing below an
+  **identically-scored** one because three unrelated events share the word
+  "community". Weak evidence for plus demonstrated harm against means don't ship.
+- **The headline fix would not have taken effect.** Stale vectors had no repair
+  path that anything actually invoked.
+
+The pattern worth keeping: *design* review rejected 4 of 5 proposals before they
+were written, and *code* review against live data caught 8 more that no amount of
+reasoning about the diff would have surfaced. Neither pass substitutes for the
+other, and both beat measurement alone — the calibration change looked fine in
+aggregate metrics while being wrong for individual users.

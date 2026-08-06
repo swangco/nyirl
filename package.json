@@ -10,7 +10,10 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "backfill:embeddings": "node scripts/backfill-embeddings.ts"
+    "backfill:embeddings": "node scripts/backfill-embeddings.ts",
+    "test:cohort": "tsx scripts/test/cohort.test.ts",
+    "test:curation": "tsx scripts/test/curation.test.ts",
+    "test:explain": "tsx scripts/test/explain.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.18",

@@ -124,7 +124,11 @@ export default async function DiscoverPage({
         outOfTown: false,
         tags: event.tags,
       },
-      { score, relevance: 0, quality: 0, boosts: 0, usedEmbedding: false },
+      // sortKey is the unrounded ranking value. Hosted events don't compete on
+      // fit (they pin above the scored links regardless), so mirroring `score`
+      // here is correct — it just satisfies the LinkScore shape describeFit
+      // takes, and nothing sorts on it.
+      { score, sortKey: score, relevance: 0, relevancePrecise: 0, quality: 0, boosts: 0, usedEmbedding: false },
     );
     return {
       kind: "event" as const,
@@ -163,9 +167,16 @@ export default async function DiscoverPage({
             tier,
             reason,
             score: s.score,
+            sortKey: s.sortKey,
           };
         })
-        .sort((a, b) => b.score - a.score)
+        // Rank on sortKey, NOT the displayed score. `score` is rounded to a
+        // whole number for display, and at that resolution the feed is mostly
+        // ties — 19 of 20 evaluated users had at least one tie inside their top
+        // 10, which a rounded sort then breaks by database order rather than by
+        // fit. sortKey is the same number unrounded, so the ordering is the one
+        // the scoring actually computed.
+        .sort((a, b) => b.sortKey - a.sortKey)
     : [];
 
   const recommendations = isProfileComplete ? [...hostedItems, ...linkItems] : [];

@@ -113,22 +113,41 @@ export async function saveProfile(formData: FormData) {
     where: eq(profiles.userId, userId),
   });
 
-  // Semantic-matching vector over the profile document. Uses the freshly
-  // uploaded resume text if present, else whatever was previously extracted.
-  // Returns null when OPENAI_API_KEY is unset — in that case we leave any
-  // existing embedding untouched rather than wiping it.
-  const embedding = await embedText(
-    buildProfileDocument({
-      fullName,
-      title: title || null,
-      company: company || null,
-      profileType: selectedTypes,
-      bioBlurb: bioBlurb || null,
-      interests,
-      tags: existing?.tags ?? null,
-      resumeTextExtracted: resumeTextExtracted ?? existing?.resumeTextExtracted ?? null,
-    }),
-  );
+  // Semantic-matching vector over the profile document. Resume text is
+  // deliberately not part of it (see buildProfileDocument — including it
+  // measured as a ranking regression); the resume is still stored and is read
+  // directly by the host's applicant screening. Returns null when no OpenAI key
+  // is visible, in which case any existing embedding is left untouched rather
+  // than wiped.
+  const nextDocument = buildProfileDocument({
+    fullName,
+    title: title || null,
+    company: company || null,
+    profileType: selectedTypes,
+    bioBlurb: bioBlurb || null,
+    interests,
+    tags: existing?.tags ?? null,
+  });
+
+  // Only pay for an embedding when the embedded TEXT actually changed. Most
+  // profile saves edit fields the vector doesn't derive from (email, linkedin,
+  // headshot, digest opt-in), so rebuilding the previous document and comparing
+  // skips the API call — removing ~300ms from the save path and avoiding
+  // needless spend/rate-limit pressure.
+  //
+  // The comparison is against the document rebuilt from the STORED row, and is
+  // only safe when we know the stored vector was computed from that same stored
+  // document. `embeddingDocument` records exactly that. Without it this skip
+  // latches permanently on failure: if an embedding call errors (embedText
+  // swallows and returns null), the row keeps the old vector but saves the new
+  // text — and every later save would then see "document unchanged" and never
+  // retry, leaving the profile ranked forever against text it no longer
+  // contains, with no repair path (the admin backfill only fills NULL vectors).
+  const previousDocument = existing?.embeddingDocument ?? null;
+  const documentUnchanged =
+    previousDocument !== null && previousDocument === nextDocument && !!existing?.embedding;
+
+  const embedding = documentUnchanged ? null : await embedText(nextDocument);
 
   // Atomic upsert on the unique userId — replaces a check-then-insert that
   // could 500 on two concurrent first-saves. On update we only overwrite
@@ -159,7 +178,7 @@ export async function saveProfile(formData: FormData) {
       headshotUrl,
       resumeUrl,
       resumeTextExtracted,
-      ...(embedding ? { embedding } : {}),
+      ...(embedding ? { embedding, embeddingDocument: nextDocument } : {}),
     })
     .onConflictDoUpdate({
       target: profiles.userId,
@@ -168,7 +187,7 @@ export async function saveProfile(formData: FormData) {
         ...(headshotUrl ? { headshotUrl } : {}),
         ...(resumeUrl ? { resumeUrl } : {}),
         ...(resumeTextExtracted ? { resumeTextExtracted } : {}),
-        ...(embedding ? { embedding } : {}),
+        ...(embedding ? { embedding, embeddingDocument: nextDocument } : {}),
         updatedAt: new Date(),
       },
     });

@@ -30,20 +30,28 @@ async function main() {
     process.exit(1);
   }
 
+  // Missing OR stale. A vector built from a different document than the code
+  // builds today is worse than a missing one: it is confidently wrong and a
+  // NULL-only backfill can never see it.
   const profileRows = await db.query.profiles.findMany();
-  const pMissing = profileRows.filter((p) => !p.embedding);
+  const pMissing = profileRows.filter(
+    (p) => !p.embedding || p.embeddingDocument !== buildProfileDocument(p),
+  );
   if (pMissing.length) {
     const embs = await embedTexts(pMissing.map((p) => buildProfileDocument(p)));
     let n = 0;
     for (let i = 0; i < pMissing.length; i++) {
       const e = embs[i];
       if (!e) continue;
-      await db.update(profiles).set({ embedding: e }).where(eq(profiles.id, pMissing[i].id));
+      await db
+        .update(profiles)
+        .set({ embedding: e, embeddingDocument: buildProfileDocument(pMissing[i]) })
+        .where(eq(profiles.id, pMissing[i].id));
       n++;
     }
-    console.log(`profiles: embedded ${n}/${pMissing.length}`);
+    console.log(`profiles: embedded ${n}/${pMissing.length} (missing or stale)`);
   } else {
-    console.log("profiles: none missing");
+    console.log("profiles: all current");
   }
 
   const linkRows = await db.query.curatedLinks.findMany();

@@ -112,6 +112,7 @@ export default async function ProfilePage({
             tier: null as string | null,
             reason: "",
             score: computeStructuralScore(profile, event.criteriaWeights, event.tags),
+            sortKey: computeStructuralScore(profile, event.criteriaWeights, event.tags),
           })),
         ...allLinks
           .filter((link) => link.eventDate && link.eventDate >= now)
@@ -132,10 +133,11 @@ export default async function ProfilePage({
               tier: tier as string | null,
               reason,
               score: s.score,
+              sortKey: s.sortKey,
             };
           }),
       ]
-        .sort((a, b) => b.score - a.score)
+        .sort((a, b) => b.sortKey - a.sortKey)
         .slice(0, 5)
     : [];
 

@@ -213,6 +213,43 @@ export function computeCompositeScore(structural: number, semantic: number): num
 }
 
 /**
+ * Recomputes an applicant's score from CURRENT data.
+ *
+ * `registrations` stores structural/semantic/composite scores written once at
+ * apply time and never refreshed. That is correct as an audit trail — it records
+ * what the host actually saw when they decided — but it goes stale: both live
+ * registrations were written before embeddings existed, so their stored
+ * semanticScore is the neutral-50 fallback (stored 100/50/80 and 89/50/73, now
+ * actually 100/64/86 and 89/61/78).
+ *
+ * Deliberately does NOT overwrite the stored values. On the live data the stale
+ * ordering happens to match the fresh ordering, so silently rewriting history
+ * would destroy the audit trail to fix a ranking problem that isn't there yet.
+ * Callers show `live` alongside `stored` and can surface the drift.
+ */
+export function scoreRegistration(
+  profile: ScorableProfile & { embedding?: number[] | null },
+  event: {
+    criteriaWeights: string | null;
+    tags: string[] | null;
+    embedding?: number[] | null;
+  },
+): { structural: number; semantic: number; composite: number; usedEmbedding: boolean } {
+  const structural = computeStructuralScore(profile, event.criteriaWeights, event.tags);
+  const semanticFromVector = applicantSemanticScore(
+    profile.embedding ?? null,
+    event.embedding ?? null,
+  );
+  const semantic = semanticFromVector ?? 50;
+  return {
+    structural,
+    semantic,
+    composite: computeCompositeScore(structural, semantic),
+    usedEmbedding: semanticFromVector !== null,
+  };
+}
+
+/**
  * Applicant relevance from precomputed embeddings — the no-LLM replacement for
  * the per-application Haiku screen. cosine(profile, event) mapped to 0-100 with
  * the same calibration discovery uses. Returns null when either embedding is
@@ -245,8 +282,32 @@ export function applicantSemanticScore(
 // ============================================================
 
 /** Relevance vs. quality blend — the same 60/40 split the registrant scorer uses. */
-const RELEVANCE_WEIGHT = 0.6;
-const QUALITY_WEIGHT = 0.4;
+/**
+ * Relevance vs. quality blend.
+ *
+ * Was 0.6/0.4, which measured badly: on a 200-event / 50-user offline
+ * evaluation against blind gold labels (scripts/eval), a 0.4 quality weight
+ * swamped the personalization signal. CQS is *deliberately* not personalized —
+ * on its own it ranks barely above random (P@5 4.8 vs 4.0) — so weighting it
+ * that heavily pulled every user's feed toward the same globally-"good" items.
+ * Measured P@5 by relevance weight: 0.6 -> 30.4, 0.7 -> 37.2, 0.8 -> 43.2,
+ * 0.9 -> 44.8, 1.0 -> 46.0.
+ *
+ * Stopping at 0.8 rather than 1.0 is deliberate. 0.8 captures ~82% of the
+ * achievable precision gain — (43.2-30.4)/(46.0-30.4) — while keeping a real
+ * quality prior in the ranking, and pure relevance has the worst false-positive
+ * rate in the sweep (FP@10 4.8 at w=1.0 vs 4.0 at w=0.8). The judges were asked
+ * to rank *personal* fit and were never told to value host prestige, exclusivity
+ * or intimacy, which is exactly what CQS encodes and what this product's
+ * curation thesis rests on — so the eval structurally under-credits quality and
+ * the true optimum is very unlikely to be w=1.0.
+ *
+ * Honest cost: against the scorer this replaces, FP@10 rises 3.0 -> 3.8. That is
+ * ~0.4 judge-flagged-irrelevant items per 10 shown, bought for a 54% relative
+ * precision gain. Worth re-examining once real click data exists.
+ */
+const RELEVANCE_WEIGHT = 0.8;
+const QUALITY_WEIGHT = 0.2;
 
 const PROFILE_TYPE_KEYWORDS: Record<(typeof profileTypeEnum)[number], string[]> = {
   founder: [
@@ -274,7 +335,7 @@ const PROFILE_TYPE_KEYWORDS: Record<(typeof profileTypeEnum)[number], string[]> 
  * unrecognized name is worse than an incomplete list.
  *
  * Entries are lowercase whitespace-normalized phrases and are matched on word
- * boundaries (see isTierOneHost), so short names like "yc" or "aws" match only
+ * boundaries (see matchTierOneHost), so short names like "aws" match only
  * as whole tokens — never as a substring inside another word. Multi-word
  * phrases like "first round" match as an adjacent token run.
  *
@@ -291,7 +352,26 @@ const TIER_ONE_HOSTS = [
   "google deepmind", "microsoft", "aws", "tiktok", "brex", "firstmark",
   "gamma", "speedrun", "hubspot", "suno", "flybridge", "xai", "runway",
   "columbia university", "bergdorf goodman", "lvmh",
+  // Named directly by Serena as tier 1 and previously absent, so live listings
+  // "Clay in NY" and "New York | Claude Code for Developers" scored zero on the
+  // criterion she checks first.
+  "clay", "claude",
 ].map((h) => h.trim().toLowerCase().replace(/\s+/g, " "));
+
+/**
+ * Names that are also ordinary English words, or substrings of common ones.
+ * Matching these against free prose produces false hosts — measured live,
+ * "(N)YC Alumni + Founder Friends" normalises to the tokens `n yc` and so paid
+ * out Y Combinator's full host score, and the same class of collision is why
+ * host-brand diversity was reverted on 2026-07-28.
+ *
+ * They stay eligible when matched against a STRUCTURED host name, where "Modal"
+ * unambiguously means Modal. They are simply never inferred from prose.
+ */
+const UNSAFE_IN_PROSE = new Set([
+  "yc", "primary", "gamma", "modal", "sierra", "runway", "notion", "cursor",
+  "ramp", "clay", "mercury", "aws", "versi", "the collective",
+]);
 
 /**
  * True if the preview text mentions a recognized tier-1 host. Normalizes the
@@ -299,9 +379,138 @@ const TIER_ONE_HOSTS = [
  * run — so "aws" won't hit inside "flaws", "yc" won't hit inside "cycling",
  * and a leading "YC ..." title still matches.
  */
-function isTierOneHost(text: string): boolean {
+export function matchTierOneHost(text: string): string | null {
   const haystack = ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
-  return TIER_ONE_HOSTS.some((host) => host.length > 0 && haystack.includes(` ${host} `));
+  // On multiple matches return the longest phrase, so the result is
+  // deterministic and "y combinator" wins over a bare "yc".
+  let best: string | null = null;
+  for (const host of TIER_ONE_HOSTS) {
+    if (host.length === 0) continue;
+    if (!haystack.includes(` ${host} `)) continue;
+    // An ambiguous name counts from prose ONLY where the text explicitly credits
+    // it as the host: "hosted by Modal" is unambiguous, "a modal dialog" is not.
+    if (UNSAFE_IN_PROSE.has(host) && !creditsHost(haystack, host)) continue;
+    if (!best || host.length > best.length) best = host;
+  }
+  return best;
+}
+
+/** Does the text credit `host` as the one running the event, rather than merely
+ * mentioning the word? Used to re-admit the names that are also English words. */
+function creditsHost(haystack: string, host: string): boolean {
+  return new RegExp(`(hosted|presented|brought to you|organized|organised) by ${host}\\b`).test(
+    haystack,
+  );
+}
+
+/**
+ * Tier-1 match against the listing's DECLARED organisers. This is the reliable
+ * path: it reads structured data rather than guessing from prose, so the full
+ * allowlist applies including the names that are ordinary English words.
+ */
+export function matchTierOneHostName(hostNames: string[] | null): string | null {
+  if (!hostNames?.length) return null;
+  let best: string | null = null;
+  for (const raw of hostNames) {
+    // Strip possessives BEFORE collapsing punctuation. Luma calendar names are
+    // routinely possessive ("Andrew's Yeung's Tech Events"), and normalising
+    // punctuation first turns that into "andrew s yeung s", which no longer
+    // contains "andrew yeung" — the correct host was being dropped.
+    const hay = ` ${raw
+      .toLowerCase()
+      .replace(/['’`]s\b/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()} `;
+    for (const host of TIER_ONE_HOSTS) {
+      if (host.length > 0 && hay.includes(` ${host} `)) {
+        if (!best || host.length > best.length) best = host;
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Preferred entry point. Uses the declared organisers when the listing publishes
+ * them (27 of 40 live links) and only falls back to scanning prose otherwise —
+ * where the ambiguous names are excluded, so the fallback is conservative rather
+ * than confidently wrong.
+ */
+export function resolveTierOneHost(
+  link: Pick<CuratedLink, "title" | "description"> & { hostNames?: string[] | null },
+): string | null {
+  const declared = matchTierOneHostName(link.hostNames ?? null);
+  if (declared) return declared;
+  // A page that declared organisers and matched none is a genuine "not tier 1",
+  // not a gap to be filled by guessing at the prose.
+  if (link.hostNames?.length) return null;
+  return matchTierOneHost(`${link.title ?? ""} ${link.description ?? ""}`);
+}
+
+/**
+ * Groups listings by who is putting them on, for de-duplicating a feed.
+ *
+ * Deliberately NOT a "don't show me my own employer" rule. That was the obvious
+ * fix for seeing "Ramp Applied AI Dinner" at the top of a Ramp employee's feed,
+ * but it is wrong by construction: a different Ramp employee may legitimately
+ * want that event, `curated_links` has no host field to key on (only scraped
+ * title/description, where a company name also appears in speaker bios and
+ * ordinary prose), and it would fire for almost nobody.
+ *
+ * The real defect is narrower and more general: several listings from the SAME
+ * host clustering at the top of one feed. Keying on the recognized host phrase
+ * where there is one, and falling back to the first distinctive title token,
+ * addresses that for every user rather than only for people whose employer
+ * happens to host events.
+ */
+export function hostBrandKey(link: Pick<CuratedLink, "title" | "description">): string | null {
+  const text = `${link.title ?? ""} ${link.description ?? ""}`;
+  const tier1 = matchTierOneHost(text);
+  if (tier1) return tier1;
+  const first = (link.title ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .find((w) => w.length > 3);
+  return first ?? null;
+}
+
+/**
+ * Reorders a scored list so no single host dominates the top of the feed:
+ * beyond `perBrand` items from the same brand, later ones are pushed below
+ * everything else. Order within each group is preserved, so this never
+ * reorders on anything except brand repetition.
+ *
+ * Measured at perBrand=2 on the evaluation corpus: P@5 41.2 -> 43.2, NDCG
+ * 40.8 -> 41.6, FP@10 4.0 -> 3.4. Reported honestly, NONE of those clear the
+ * |t| > 2 bar this repo uses (t = 1.53 / 1.41 / -1.77) — they are directional,
+ * not proven. It is applied anyway only because the downside is bounded and
+ * one-sided: the FP@10 comparison had 0 users worse and 3 better, and the
+ * function can only demote duplicates within an already-scored list, so the
+ * items promoted in their place were adjacent in rank already. Re-measure on
+ * real data before trusting the size of the gain; perBrand=1 was worse on every
+ * metric and should not be used.
+ */
+export function diversifyByBrand<T>(
+  items: T[],
+  keyOf: (item: T) => string | null,
+  perBrand = 2,
+): T[] {
+  const seen = new Map<string, number>();
+  const kept: T[] = [];
+  const demoted: T[] = [];
+  for (const item of items) {
+    const key = keyOf(item);
+    if (!key) {
+      kept.push(item);
+      continue;
+    }
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    (n <= perBrand ? kept : demoted).push(item);
+  }
+  return [...kept, ...demoted];
 }
 
 /** Extracts an attendee count from scraped preview text, if present (e.g. Luma's "N attending"). */
@@ -332,10 +541,14 @@ type CuratedLink = typeof curatedLinks.$inferSelect;
  * NYC locality, and intimacy (smaller = more curated) all feed it.
  */
 export function computeCurationQualityScore(
-  link: Pick<CuratedLink, "title" | "description" | "exclusivity" | "format" | "outOfTown">,
+  link: Pick<CuratedLink, "title" | "description" | "exclusivity" | "format" | "outOfTown"> & {
+    hostNames?: string[] | null;
+  },
 ): number {
+  // Prefers the listing's declared organisers; only guesses from prose when the
+  // page publishes none. See resolveTierOneHost.
+  const host = resolveTierOneHost(link) ? HOST_TIER_POINTS.tier_1 : HOST_TIER_POINTS.unknown;
   const text = `${link.title ?? ""} ${link.description ?? ""}`;
-  const host = isTierOneHost(text) ? HOST_TIER_POINTS.tier_1 : HOST_TIER_POINTS.unknown;
   // Fall back to the schema defaults for any value outside the current enum
   // (legacy rows, manual SQL) so an unmapped value can't make the score NaN.
   const exclusivity = EXCLUSIVITY_POINTS[link.exclusivity] ?? EXCLUSIVITY_POINTS.capped;
@@ -401,15 +614,44 @@ export function computeKeywordFit(
 }
 
 /**
- * Maps a cosine similarity to a 0-100 relevance score. text-embedding-3 puts
- * clearly-related documents around 0.35-0.55 and unrelated ones near 0.1-0.2;
- * the linear rescale spreads that band across the full scale so relevance isn't
- * compressed into the low end. Clamped, so ranking stays sane outside the band.
- * TODO(stage-2): a learned calibration replaces this constant mapping once we
- * have click data.
+ * Maps a cosine similarity to a 0-100 relevance score.
+ *
+ * DELIBERATELY LEFT AT 0.15/0.55. The offline evaluation measured the observed
+ * band (p05 0.206, p50 0.319, p99 0.504) and a tighter 0.20/0.50 mapping looked
+ * like an obvious improvement — but a paired ablation on the same 50 users found
+ * it worth +0.008 P@5 with SE 0.016 (t = 0.50), i.e. indistinguishable from
+ * noise. Essentially all of the measured gain came from the relevance/quality
+ * weight, not from the band.
+ *
+ * Two reasons that makes retuning actively harmful here:
+ *  - Blast radius. This mapping sits underneath absolute thresholds (the digest
+ *    bar, describeFit's tiers) and underneath applicantSemanticScore, whose
+ *    output is PERSISTED on registrations at apply time. Shifting it silently
+ *    re-scales stored scores, so applicants from before and after a deploy get
+ *    ranked against each other on two different scales.
+ *  - Stability. The band is what makes a score comparable across time; a
+ *    retune with no click data to validate it against is a guess with a large
+ *    blast radius.
+ *
+ * The corpus-mismatch argument that used to sit here is GONE: it said the
+ * fitted band came from synthetic profiles with no resume text while production
+ * embedded 6k chars of resume, so the percentiles wouldn't transfer.
+ * buildProfileDocument no longer includes resume text, so once the force
+ * re-embed has run the live and eval corpora agree and that objection is moot.
+ *
+ * TODO(stage-2): re-derive from the LIVE corpus once there is real engagement
+ * data to validate against, and re-base persisted applicant scores in the same
+ * migration.
  */
 const COSINE_FLOOR = 0.15;
 const COSINE_CEIL = 0.55;
+
+/** Unrounded form, used internally for ranking so ties aren't manufactured. */
+export function semanticRelevancePrecise(similarity: number): number {
+  const t = (similarity - COSINE_FLOOR) / (COSINE_CEIL - COSINE_FLOOR);
+  return Math.min(1, Math.max(0, t)) * 100;
+}
+
 export function semanticRelevance(similarity: number): number {
   const t = (similarity - COSINE_FLOOR) / (COSINE_CEIL - COSINE_FLOOR);
   return Math.round(Math.min(1, Math.max(0, t)) * 100);
@@ -425,7 +667,28 @@ export function computeInterestBoost(
   const interests = profile.interests ?? [];
   const t = tags ?? [];
   const hits = interests.filter((i) => t.includes(i)).length;
-  return Math.min(hits * 10, 20);
+  /**
+   * +5 per hit, capped at +10 — halved from +10/+20 on 2026-08-05.
+   *
+   * The measured problem is one of PROPORTION. Across the live corpus the
+   * entire Curation Quality Score, from the best listing (93) to the worst
+   * (28), moves the final score by 13 points at QUALITY_WEIGHT 0.2. At the old
+   * +10 a single interest tag was worth 77% of that; at +20 two tags exceeded
+   * Serena's whole editorial system. A hobby tiebreaker should not outweigh
+   * host, exclusivity, format, locality and room size combined.
+   *
+   * The evidence bar, stated honestly: a boost-magnitude sweep on the 50-user
+   * gold set shows NDCG@10 peaking around +2 to +5, flat to +10, and degrading
+   * significantly above it (+20 gives t = -3.08, +30 gives t = -3.59). The move
+   * from +10 to +5 is itself NOT significant (t = 1.64) — this is a
+   * risk-asymmetry decision, like the diversifyByBrand revert: the downside of
+   * being too large is measured, the downside of being smaller is not.
+   *
+   * Deliberately NOT zero. Removing the boost entirely is also within noise
+   * (t = -0.90), and the blind gold judges did credit hobby matches as a
+   * secondary tiebreaker — which is exactly what this now is.
+   */
+  return Math.min(hits * 5, 10);
 }
 
 /** Gender-orientation match (e.g. a womens_focused tag for a "woman" profile). */
@@ -438,10 +701,29 @@ export function computeGenderBoost(
 }
 
 export type LinkScore = {
-  /** Final 0-100 rank. */
+  /** Final 0-100 score, rounded — this is the number shown to users. */
   score: number;
-  /** 0-100 relevance component (semantic or keyword). */
+  /**
+   * The same value UNROUNDED. Always sort by this, never by `score`.
+   *
+   * Rounding to an integer collapses a 200-item catalogue onto ~100 distinct
+   * values, so ties are the norm rather than the exception: measured on the
+   * evaluation set, 19 of 20 users had tied scores inside their own top-10, and
+   * those ties fall through to whatever order the rows arrived in (createdAt).
+   * Ranking on the unrounded value recovered ~2 points of P@5 (41.2 -> 43.2).
+   */
+  sortKey: number;
+  /** 0-100 relevance component (semantic or keyword), ROUNDED for display. */
   relevance: number;
+  /**
+   * The same relevance UNROUNDED, as actually used in the blend.
+   *
+   * Exposed because anything explaining the score has to reproduce it exactly:
+   * multiplying the rounded value by 0.8 drifts up to 0.4 points from the real
+   * total, which is enough to print an equation that doesn't equal the number
+   * printed beside it.
+   */
+  relevancePrecise: number;
   /** 0-100 quality prior (CQS). */
   quality: number;
   /** Additive rule-based boosts folded into the score. */
@@ -475,25 +757,43 @@ export function scoreCuratedLink(
 ): LinkScore {
   const quality = computeCurationQualityScore(link);
   if (!profile) {
-    return { score: quality, relevance: 0, quality, boosts: 0, usedEmbedding: false };
+    return {
+      score: quality,
+      sortKey: quality,
+      relevance: 0,
+      relevancePrecise: 0,
+      quality,
+      boosts: 0,
+      usedEmbedding: false,
+    };
   }
 
   const pe = opts?.profileEmbedding;
   const le = opts?.linkEmbedding;
-  let relevance: number;
+  // Keep relevance unrounded through the arithmetic — rounding it here would
+  // discard ordering information before the blend even happens.
+  let relevancePrecise: number;
   let usedEmbedding = false;
   if (pe && le && pe.length === le.length) {
-    relevance = semanticRelevance(cosineSimilarity(pe, le));
+    relevancePrecise = semanticRelevancePrecise(cosineSimilarity(pe, le));
     usedEmbedding = true;
   } else {
-    relevance = computeKeywordFit(profile, link);
+    relevancePrecise = computeKeywordFit(profile, link);
   }
 
   const boosts =
     computeInterestBoost(profile, link.tags) + computeGenderBoost(profile, link.tags);
-  const base = RELEVANCE_WEIGHT * relevance + QUALITY_WEIGHT * quality;
-  const score = Math.round(Math.min(100, Math.max(0, base + boosts)));
-  return { score, relevance, quality, boosts, usedEmbedding };
+  const base = RELEVANCE_WEIGHT * relevancePrecise + QUALITY_WEIGHT * quality;
+  const sortKey = Math.min(100, Math.max(0, base + boosts));
+  return {
+    score: Math.round(sortKey),
+    sortKey,
+    relevance: Math.round(relevancePrecise),
+    relevancePrecise,
+    quality,
+    boosts,
+    usedEmbedding,
+  };
 }
 
 /**
@@ -512,7 +812,7 @@ export function describeFit(link: ScorableLink, s: LinkScore): { tier: string; r
           : "Worth a look";
 
   const reasons: string[] = [];
-  if (isTierOneHost(`${link.title ?? ""} ${link.description ?? ""}`)) reasons.push("notable host");
+  if (resolveTierOneHost(link)) reasons.push("notable host");
   if (link.exclusivity === "invite_only") reasons.push("invite-only");
   else if (link.format === "dinner") reasons.push("intimate dinner");
   if (s.relevance >= 65) reasons.push("matches your profile");
@@ -520,3 +820,103 @@ export function describeFit(link: ScorableLink, s: LinkScore): { tier: string; r
 
   return { tier, reason: reasons.slice(0, 2).join(" · ") };
 }
+
+// ---------------------------------------------------------------------------
+// Explainability
+//
+// The inspector UI must never re-derive the arithmetic — a second copy of these
+// numbers would drift from the real one the moment either changed, and a score
+// explanation that disagrees with the score is worse than no explanation. So
+// the breakdown is produced HERE, from the same constants the scorer uses.
+// ---------------------------------------------------------------------------
+
+export type QualityComponent = {
+  key: "host" | "exclusivity" | "format" | "locality" | "intimacy";
+  label: string;
+  earned: number;
+  max: number;
+  /** Plain-language reason this many points were earned. */
+  detail: string;
+};
+
+/** Itemised Curation Quality Score. Sums to computeCurationQualityScore(link). */
+export function explainCurationQuality(
+  link: Pick<CuratedLink, "title" | "description" | "exclusivity" | "format" | "outOfTown"> & {
+    hostNames?: string[] | null;
+  },
+): QualityComponent[] {
+  const text = `${link.title ?? ""} ${link.description ?? ""}`;
+  const hostKey = resolveTierOneHost(link);
+  const declared = matchTierOneHostName(link.hostNames ?? null);
+  const count = extractAttendeeCount(text);
+  const exclusivity = EXCLUSIVITY_POINTS[link.exclusivity] ?? EXCLUSIVITY_POINTS.capped;
+  const format = FORMAT_POINTS[link.format] ?? FORMAT_POINTS.mixer;
+
+  return [
+    {
+      key: "host",
+      label: "Host",
+      earned: hostKey ? HOST_TIER_POINTS.tier_1 : HOST_TIER_POINTS.unknown,
+      max: HOST_TIER_POINTS.tier_1,
+      detail: hostKey
+        ? declared
+          ? `“${hostKey}” — named as the organiser on the listing`
+          : `“${hostKey}” — inferred from the text, no organiser published`
+        : link.hostNames?.length
+          ? `organiser is “${link.hostNames[0]}”, not on the tier-1 list`
+          : "no recognised host",
+    },
+    {
+      key: "exclusivity",
+      label: "Exclusivity",
+      earned: exclusivity,
+      max: EXCLUSIVITY_POINTS.invite_only,
+      detail:
+        link.exclusivity === "invite_only"
+          ? "invite only"
+          : link.exclusivity === "open"
+            ? "open to the public"
+            : "capped headcount",
+    },
+    {
+      key: "format",
+      label: "Format",
+      earned: format,
+      max: FORMAT_POINTS.dinner,
+      detail: `${link.format} — sit-down formats score above expos`,
+    },
+    {
+      key: "locality",
+      label: "Locality",
+      earned: link.outOfTown ? LOCALITY_POINTS.out_of_town : LOCALITY_POINTS.nyc,
+      max: LOCALITY_POINTS.nyc,
+      detail: link.outOfTown ? "outside New York" : "in New York",
+    },
+    {
+      key: "intimacy",
+      label: "Room size",
+      earned:
+        count === null
+          ? INTIMACY_POINTS.unknown
+          : count <= 50
+            ? INTIMACY_POINTS.small
+            : count <= 150
+              ? INTIMACY_POINTS.medium
+              : INTIMACY_POINTS.large,
+      max: INTIMACY_POINTS.small,
+      detail:
+        count === null
+          ? "headcount not published — treated as mid-sized"
+          : `~${count} people`,
+    },
+  ];
+}
+
+/** The blend weights, exposed so the UI can state them rather than hardcode them. */
+export const SCORE_WEIGHTS = {
+  relevance: RELEVANCE_WEIGHT,
+  quality: QUALITY_WEIGHT,
+} as const;
+
+/** Calibration band, exposed so the UI can explain what a cosine maps to. */
+export const COSINE_BAND = { floor: COSINE_FLOOR, ceil: COSINE_CEIL } as const;
