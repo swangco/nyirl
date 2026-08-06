@@ -30,6 +30,7 @@ config({ path: ".env.local" });
   console.log(`${rows.length} links${apply ? "" : "  (DRY RUN — pass --apply to write)"}\n`);
 
   let descUpdated = 0, hostUpdated = 0, skipped = 0, failed = 0, gained = 0;
+  let dateFilled = 0, imageFilled = 0;
   for (const row of rows) {
     let preview;
     try {
@@ -42,11 +43,17 @@ config({ path: ".env.local" });
     const newDesc = preview.description ?? "";
     const takeDesc = newDesc.length > oldDesc.length;
     const takeHost = preview.hostNames.length > 0 && !(row.hostNames ?? []).length;
-    if (!takeDesc && !takeHost) { skipped++; continue; }
+    // Fill-only, never overwrite: a transient scrape must not be able to move a
+    // date the host already set.
+    const takeDate = !row.eventDate && !!preview.eventDate;
+    const takeImage = !row.imageUrl && !!preview.imageUrl;
+    if (!takeDesc && !takeHost && !takeDate && !takeImage) { skipped++; continue; }
 
     const patch: Record<string, unknown> = {};
     if (takeDesc) { patch.description = newDesc; descUpdated++; gained += newDesc.length - oldDesc.length; }
     if (takeHost) { patch.hostNames = preview.hostNames; hostUpdated++; }
+    if (takeDate) { patch.eventDate = preview.eventDate; dateFilled++; }
+    if (takeImage) { patch.imageUrl = preview.imageUrl; imageFilled++; }
     if (apply) await db.update(curatedLinks).set(patch).where(eq(curatedLinks.id, row.id));
 
     console.log(
@@ -58,6 +65,8 @@ config({ path: ".env.local" });
 
   console.log(`\n  descriptions widened : ${descUpdated}`);
   console.log(`  hosts filled         : ${hostUpdated}`);
+  console.log(`  dates filled         : ${dateFilled}`);
+  console.log(`  images filled        : ${imageFilled}`);
   console.log(`  already current      : ${skipped}`);
   console.log(`  fetch failures       : ${failed}`);
   console.log(`  characters gained    : ${gained}`);

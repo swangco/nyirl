@@ -52,6 +52,9 @@ export default async function SignalPage({
   let personLabel = "";
   let personNote = "";
   let people: { id: string; label: string }[] = [];
+  let inventory: {
+    total: number; upcoming: number; noDate: number; thinDescription: number;
+  } | null = null;
 
   if (mode === "sandbox") {
     const { person, rows: sandboxRows } = buildSandbox(personId);
@@ -75,6 +78,13 @@ export default async function SignalPage({
       const links = await db.query.curatedLinks.findMany({
         where: gte(curatedLinks.eventDate, new Date(0)),
       });
+      const now = new Date();
+      inventory = {
+        total: links.length,
+        upcoming: links.filter((l) => l.eventDate && l.eventDate >= now).length,
+        noDate: links.filter((l) => !l.eventDate).length,
+        thinDescription: links.filter((l) => (l.description ?? "").length < 200).length,
+      };
       rows = links.map((link) => ({
         id: link.id,
         title: link.title || link.sourceUrl,
@@ -117,6 +127,38 @@ export default async function SignalPage({
           ))}
         </Segment>
       </div>
+
+      {/* The number that dominates everything else on this page. The feed filters
+          on eventDate >= now, so a catalogue full of past events ranks nothing —
+          no amount of scoring work matters if there is nothing to score. */}
+      {inventory && (
+        <div
+          className={`mb-8 rounded-lg border p-4 sm:p-5 ${
+            inventory.upcoming < 5
+              ? "border-accent/40 bg-accent-soft"
+              : "border-line bg-surface"
+          }`}
+        >
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+            <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-foreground-soft">
+              Inventory
+            </span>
+            <Stat n={inventory.upcoming} of={inventory.total} label="upcoming" emphasis />
+            <Stat n={inventory.noDate} of={inventory.total} label="no date" />
+            <Stat n={inventory.thinDescription} of={inventory.total} label="thin description" />
+          </div>
+          {inventory.upcoming < 5 && (
+            <p className="mt-3 max-w-prose text-sm leading-relaxed text-pretty text-foreground">
+              Only <strong>{inventory.upcoming}</strong> of {inventory.total} curated
+              links are still upcoming — the feed filters on{" "}
+              <code className="font-mono text-xs">eventDate ≥ now</code>, so that is
+              the entire ranked list a signed-in visitor sees. Ranking quality
+              cannot matter more than having something to rank. New links are the
+              binding constraint right now, not the scoring.
+            </p>
+          )}
+        </div>
+      )}
 
       {personLabel && (
         <div className="mb-6">
@@ -223,6 +265,32 @@ function MiniBar({ ex }: { ex: MatchExplanation }) {
         .map((s, i) => (
           <span key={i} className={s.c} style={{ width: `${Math.min(100, s.w)}%` }} />
         ))}
+    </span>
+  );
+}
+
+function Stat({
+  n,
+  of,
+  label,
+  emphasis = false,
+}: {
+  n: number;
+  of: number;
+  label: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <span className="flex items-baseline gap-1.5">
+      <span
+        className={`font-mono tabular-nums ${
+          emphasis ? "text-xl font-semibold text-foreground" : "text-sm text-foreground"
+        }`}
+      >
+        {n}
+        <span className="text-foreground-faint">/{of}</span>
+      </span>
+      <span className="text-xs text-foreground-soft">{label}</span>
     </span>
   );
 }

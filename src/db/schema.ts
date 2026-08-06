@@ -345,6 +345,45 @@ export const interactionSourceEnum = [
   "apply",
 ] as const;
 
+/**
+ * Links Serena removed, kept rather than destroyed.
+ *
+ * `removeCuratedLink` was a hard DELETE, so every rejection was lost. That
+ * matters because curation is a DISCARD machine — roughly 80% of what she sees
+ * is thrown away — and a filter cannot be evaluated on a table containing only
+ * the things it kept. (Verified: zero interaction_events point at a missing
+ * link, so nothing has actually been lost yet. This stops future loss.)
+ *
+ * Deliberately a SEPARATE TABLE rather than a `removed_at` flag on
+ * curated_links. A flag is fail-open: nine queries read curated_links and seven
+ * of them would fail SILENTLY if they forgot the filter — the feed would rank
+ * removed links, the digest would email them, and the impression logger would
+ * pollute the only behavioural dataset the project has. An archive table is
+ * fail-safe: no existing query can see these rows at all.
+ */
+export const removedLinks = pgTable("removed_links", {
+  id: text("id").primaryKey(),
+  sourceUrl: text("source_url").notNull(),
+  title: text("title"),
+  description: text("description"),
+  category: text("category"),
+  hostNames: text("host_names").array(),
+  tags: text("tags").array(),
+  // The full row, so a restore is LOSSLESS. Learned the hard way: an archive
+  // that stores only the "interesting" columns silently drops eventDate,
+  // exclusivity, format, locality and image on the way back, which quietly
+  // downgrades a restored listing's quality score.
+  imageUrl: text("image_url"),
+  eventDate: timestamp("event_date", { mode: "date" }),
+  exclusivity: text("exclusivity"),
+  format: text("format"),
+  outOfTown: boolean("out_of_town"),
+  /** Why it was removed, when we know. Free text — this is training data. */
+  reason: text("reason"),
+  addedAt: timestamp("added_at", { mode: "date" }),
+  removedAt: timestamp("removed_at", { mode: "date" }).notNull().defaultNow(),
+});
+
 export const interactionEvents = pgTable(
   "interaction_events",
   {

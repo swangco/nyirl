@@ -667,7 +667,28 @@ export function computeInterestBoost(
   const interests = profile.interests ?? [];
   const t = tags ?? [];
   const hits = interests.filter((i) => t.includes(i)).length;
-  return Math.min(hits * 10, 20);
+  /**
+   * +5 per hit, capped at +10 — halved from +10/+20 on 2026-08-05.
+   *
+   * The measured problem is one of PROPORTION. Across the live corpus the
+   * entire Curation Quality Score, from the best listing (93) to the worst
+   * (28), moves the final score by 13 points at QUALITY_WEIGHT 0.2. At the old
+   * +10 a single interest tag was worth 77% of that; at +20 two tags exceeded
+   * Serena's whole editorial system. A hobby tiebreaker should not outweigh
+   * host, exclusivity, format, locality and room size combined.
+   *
+   * The evidence bar, stated honestly: a boost-magnitude sweep on the 50-user
+   * gold set shows NDCG@10 peaking around +2 to +5, flat to +10, and degrading
+   * significantly above it (+20 gives t = -3.08, +30 gives t = -3.59). The move
+   * from +10 to +5 is itself NOT significant (t = 1.64) — this is a
+   * risk-asymmetry decision, like the diversifyByBrand revert: the downside of
+   * being too large is measured, the downside of being smaller is not.
+   *
+   * Deliberately NOT zero. Removing the boost entirely is also within noise
+   * (t = -0.90), and the blind gold judges did credit hobby matches as a
+   * secondary tiebreaker — which is exactly what this now is.
+   */
+  return Math.min(hits * 5, 10);
 }
 
 /** Gender-orientation match (e.g. a womens_focused tag for a "woman" profile). */

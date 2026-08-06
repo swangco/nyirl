@@ -52,12 +52,21 @@ export type LinkPreview = {
   /** Organisations credited as running the event, from structured data. Empty
    * when the page publishes none. See extractJsonLdEvent. */
   hostNames: string[];
+  /**
+   * True when the URL is a CALENDAR INDEX rather than a single event — a page
+   * that lists many events. These must not be ingested: every field taken from
+   * one describes whichever event happens to be listed first, and that changes
+   * as the calendar does. Verified live on luma.com/jointhecollective, whose
+   * stored date (2026-07-22) belongs to an event that is no longer even first.
+   */
+  isCalendarIndex: boolean;
 };
 
 /** Luma's default calendar name for an individual — carries no host identity. */
 const NON_HOST_NAMES = new Set(["personal", "my calendar", "events"]);
 
 type JsonLdEvent = {
+  "@type"?: unknown;
   name?: unknown;
   description?: unknown;
   organizer?: unknown;
@@ -78,7 +87,13 @@ type JsonLdEvent = {
  *    badly: a listing that merely name-drops a well-known company reads as if
  *    that company were hosting.
  */
-function extractJsonLdEvent(html: string): { description: string | null; hostNames: string[] } {
+function extractJsonLdEvent(html: string): {
+  description: string | null;
+  hostNames: string[];
+  /** True when the page is a calendar/listing index rather than one event. */
+  isIndex: boolean;
+} {
+  let isIndex = false;
   const blocks = html.matchAll(
     /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
   );
@@ -92,6 +107,16 @@ function extractJsonLdEvent(html: string): { description: string | null; hostNam
     const candidates = (Array.isArray(parsed) ? parsed : [parsed]) as JsonLdEvent[];
     for (const node of candidates) {
       if (!node || typeof node !== "object") continue;
+      // A calendar page publishes ItemList + many Events. Taking fields off it
+      // describes whichever event happens to be listed first, which drifts as
+      // the calendar changes. luma.com/jointhecollective entered the corpus
+      // this way and its stored date belongs to an unrelated event.
+      if (node["@type"] === "ItemList") {
+        isIndex = true;
+        continue;
+      }
+      // Only a real Event describes THIS page.
+      if (node["@type"] !== "Event") continue;
       const organizers = Array.isArray(node.organizer)
         ? node.organizer
         : node.organizer
@@ -109,11 +134,11 @@ function extractJsonLdEvent(html: string): { description: string | null; hostNam
         .filter((n) => n.length > 0 && !NON_HOST_NAMES.has(n.toLowerCase()));
       const description = typeof node.description === "string" ? node.description : null;
       if (description || hostNames.length) {
-        return { description, hostNames: [...new Set(hostNames)] };
+        return { description, hostNames: [...new Set(hostNames)], isIndex };
       }
     }
   }
-  return { description: null, hostNames: [] };
+  return { description: null, hostNames: [], isIndex };
 }
 
 /**
@@ -153,11 +178,17 @@ export async function fetchLinkPreview(url: string): Promise<LinkPreview> {
       title: extractMeta(html, "og:title"),
       description,
       imageUrl: extractMeta(html, "og:image"),
-      eventDate: extractEventDate(html),
+      // A calendar index has no date of its own. Returning the first one on the
+      // page would silently attribute an unrelated event's date to this row.
+      eventDate: ld.isIndex ? null : extractEventDate(html),
       hostNames: ld.hostNames,
+      isCalendarIndex: ld.isIndex,
     };
   } catch (err) {
     console.error("Link preview fetch failed:", url, err);
-    return { title: null, description: null, imageUrl: null, eventDate: null, hostNames: [] };
+    return {
+      title: null, description: null, imageUrl: null, eventDate: null,
+      hostNames: [], isCalendarIndex: false,
+    };
   }
 }

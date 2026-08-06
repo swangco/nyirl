@@ -12,6 +12,7 @@ import {
   eventCategoryEnum,
   linkExclusivityEnum,
   linkFormatEnum,
+  removedLinks,
 } from "@/db/schema";
 import { buildLinkDocument, embedText, embedTexts } from "@/lib/embeddings";
 import { fetchLinkPreview } from "@/lib/og-meta";
@@ -93,8 +94,37 @@ export async function addCuratedLink(formData: FormData) {
   redirect("/curate?added=1");
 }
 
-export async function removeCuratedLink(id: string) {
+export async function removeCuratedLink(id: string, formData?: FormData) {
+  // Second arg is FormData so this stays bindable as a <form action>. An
+  // optional string here breaks the (formData: FormData) => void contract.
+  const reason = (formData?.get("reason") as string | null)?.trim() || null;
   await requireHost();
+  // Archive before deleting. A rejection is a curation decision and the only
+  // negative signal this product produces; throwing it away means the filter
+  // can never be evaluated. See removedLinks in the schema for why this is a
+  // separate table rather than a flag.
+  const row = await db.query.curatedLinks.findFirst({ where: eq(curatedLinks.id, id) });
+  if (row) {
+    await db
+      .insert(removedLinks)
+      .values({
+        id: row.id,
+        sourceUrl: row.sourceUrl,
+        title: row.title,
+        description: row.description,
+        category: row.category,
+        hostNames: row.hostNames,
+        tags: row.tags,
+        imageUrl: row.imageUrl,
+        eventDate: row.eventDate,
+        exclusivity: row.exclusivity,
+        format: row.format,
+        outOfTown: row.outOfTown,
+        reason,
+        addedAt: row.createdAt,
+      })
+      .onConflictDoNothing();
+  }
   await db.delete(curatedLinks).where(eq(curatedLinks.id, id));
   redirect("/curate?removed=1");
 }
@@ -127,6 +157,33 @@ const ExtractedEventsSchema = z.object({
 });
 
 type ExtractedEvent = z.infer<typeof ExtractedEventsSchema>["events"][number];
+
+/**
+ * A deliberately MINIMAL structural guard on bulk import.
+ *
+ * A hostname denylist was tried and reverted the same day. It looked obviously
+ * right — block docs.google.com, x.com — and in practice it removed FIRSTMARK
+ * GUILDS SUMMIT, an invite-only C-suite event with the longest genuine
+ * description in the corpus, whose only sin is taking RSVPs through a Google
+ * Form. It also removed a personal invite from Runway\'s CEO. Where an event
+ * takes its RSVPs says nothing about whether it is a good event, and blocking on
+ * it penalises exactly the off-Luma invitations that tend to be the most
+ * exclusive.
+ *
+ * What IS structurally decidable: a calendar INDEX page is not an event. It
+ * publishes ItemList plus many Events, so every field read from it describes
+ * whichever listing happens to be first — luma.com/jointhecollective entered
+ * the corpus that way and carried a date belonging to an unrelated event.
+ * That check lives in og-meta.ts as `isCalendarIndex`.
+ */
+function isNonEventUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return false;
+  } catch {
+    return true; // unparseable is not an event
+  }
+}
 
 export async function addCuratedLinksBulk(formData: FormData) {
   const userId = await requireHost();
@@ -176,9 +233,21 @@ ${text}
   const existingUrls = new Set(existing.map((e) => e.sourceUrl));
   const newUrls = urls.filter((u) => !existingUrls.has(u));
 
-  const previews = await Promise.all(
-    newUrls.map(async (url) => ({ url, preview: await fetchLinkPreview(url) })),
+  // Structural rejects, before any embedding spend. Note what this must NOT do:
+  // reject on a MISSING Event JSON-LD. 11 of the 40 live links publish none, and
+  // 6 of those are legitimate private Luma events that simply withhold it — so
+  // "no structured data" is not evidence of a bad link. Only a positive
+  // ItemList signal (a calendar index) is.
+  const fetched = await Promise.all(
+    newUrls
+      .filter((url) => !isNonEventUrl(url))
+      .map(async (url) => ({ url, preview: await fetchLinkPreview(url) })),
   );
+  const previews = fetched.filter(({ preview }) => !preview.isCalendarIndex);
+  const rejected = newUrls.length - previews.length;
+  if (rejected > 0) {
+    console.warn(`addCuratedLinksBulk: rejected ${rejected} non-event URL(s)`);
+  }
 
   if (previews.length > 0) {
     // One batched embedding call for the whole insert (index-aligned with previews).
@@ -221,5 +290,5 @@ ${text}
     );
   }
 
-  redirect(`/curate?bulkAdded=${previews.length}`);
+  redirect(`/curate?bulkAdded=${previews.length}${rejected ? `&rejected=${rejected}` : ""}`);
 }
